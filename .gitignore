@@ -2,6 +2,7 @@ node_modules/
 .env
 storage/reports/*.xlsx
 npm-debug.log*
+tmp_*.log
 .DS_Store
 
 # 本地说明文档，不参与提交
