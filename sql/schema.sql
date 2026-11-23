@@ -4,7 +4,7 @@
 --
 -- 说明：包含全部 13 张表，建表与字段变更已合并到此文件，
 --       不再需要额外的迁移脚本。脚本使用 CREATE TABLE IF NOT EXISTS，
---       可重复执行；内置 6 个常用投放渠道，可在系统中继续维护。
+--       可重复执行；不写入任何业务数据，管理员账号由 npm run seed 创建。
 --
 -- 表清单：
 --   sys_user        系统用户（管理员 / 普通用户）
@@ -260,11 +260,5 @@ CREATE TABLE `report_task` (
   KEY `idx_created_by` (`created_by`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='报表导出任务';
 
--- 常用投放渠道初始数据（管理员可在「渠道管理」中改名、停用或删除）
-INSERT IGNORE INTO channel (code, name, bid_type, status, sort_no) VALUES
-  ('douyin', '抖音', 'cpm', 1, 1),
-  ('wechat', '微信朋友圈', 'cpm', 1, 2),
-  ('xiaohongshu', '小红书', 'cpc', 1, 3),
-  ('kuaishou', '快手', 'cpm', 1, 4),
-  ('baidu', '百度', 'cpc', 1, 5),
-  ('other', '其他', 'cpm', 1, 6);
+-- 说明：本脚本只建表，不写入任何渠道、项目、计划等业务数据；
+--       管理员账号由 npm run seed 创建。

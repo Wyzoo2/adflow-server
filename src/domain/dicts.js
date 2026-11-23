@@ -7,7 +7,6 @@ export const CHANNELS = [
   { code: 'xiaohongshu', name: '小红书', enabled: true, bidType: 'cpc' },
   { code: 'kuaishou', name: '快手', enabled: true, bidType: 'cpm' },
   { code: 'baidu', name: '百度', enabled: true, bidType: 'cpc' },
-  { code: 'other', name: '其他', enabled: true, bidType: 'cpm' },
 ];
 
 export const AGES = [

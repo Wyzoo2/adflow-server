@@ -20,6 +20,8 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'adflow-dev-secret',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '2h',
   reportDir: path.resolve(process.cwd(), process.env.REPORT_DIR || 'storage/reports'),
+  // PDF 报表使用的中文字体；Windows 默认用黑体，Linux 部署时通过环境变量指定
+  pdfFontPath: process.env.PDF_FONT_PATH || 'C:\\Windows\\Fonts\\simhei.ttf',
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
     port: num(process.env.DB_PORT, 3306),

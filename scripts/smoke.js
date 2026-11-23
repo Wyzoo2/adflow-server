@@ -92,21 +92,13 @@ async function main() {
   const channelList = await api('/api/v1/channels?pageSize=50', { token: admin });
   check('渠道列表', channelList.payload.data?.items?.some((c) => c.code === channelCode));
 
-  const channelDeleted = await api(`/api/v1/channels/${channel.payload.data.id}`, {
-    method: 'DELETE',
-    token: admin,
-  });
-  check('删除渠道', channelDeleted.payload.data?.deleted === true);
-  const channelActive = await api('/api/v1/channels/active', { token: admin });
-  check('删除后不在启用列表', !channelActive.payload.data?.some((c) => c.code === channelCode));
-
   const created = await api('/api/v1/campaigns', {
     method: 'POST',
     token: admin,
     body: {
       projectId,
       name: `冒烟测试计划-${stamp}`,
-      channel: 'douyin',
+      channel: channelCode,
       objective: 'impression',
       bidType: 'cpm',
       budget: 10000,
@@ -129,7 +121,7 @@ async function main() {
       detail0.payload.data?.contractNo === 'HT-2026-001'
   );
   check('R8 创建人字段', detail0.payload.data?.creatorName === '系统管理员', detail0.payload.data?.creatorName);
-  check('渠道名称来自渠道表', detail0.payload.data?.channelName === '抖音', detail0.payload.data?.channelName);
+  check('渠道名称来自渠道表', detail0.payload.data?.channelName === `冒烟渠道-${stamp}`, detail0.payload.data?.channelName);
 
   // R13：无数据时完成率为 null
   const emptyDraft = await api('/api/v1/campaigns', {
@@ -138,7 +130,7 @@ async function main() {
     body: {
       projectId,
       name: `空草稿-${stamp}`,
-      channel: 'wechat',
+      channel: channelCode,
       budget: 1000,
       targetImpressions: 10000,
       startDate: '2026-12-01',
@@ -272,7 +264,7 @@ async function main() {
 
   // ---------- R14 渠道名称 ----------
   const channels = await api('/api/v1/dashboard/channels', { token: admin });
-  check('R14 渠道中文名', channels.payload.data?.[0]?.channelName === '抖音', JSON.stringify(channels.payload.data?.[0]));
+  check('R14 渠道中文名', channels.payload.data?.[0]?.channelName === `冒烟渠道-${stamp}`, JSON.stringify(channels.payload.data?.[0]));
 
   // ---------- R9 同步记录 ----------
   const syncTasks = await api('/api/v1/sync-tasks', { token: admin });
@@ -290,7 +282,7 @@ async function main() {
 
   // ---------- R11 字典 / R12 续期 ----------
   const dicts = await api('/api/v1/dicts', { token: admin });
-  check('R11 字典接口', dicts.payload.data?.channels?.length >= 5 && Boolean(dicts.payload.data?.version));
+  check('R11 字典接口', dicts.payload.data?.channels?.length >= 1 && Boolean(dicts.payload.data?.version));
 
   const refreshed = await api('/api/v1/auth/refresh', { method: 'POST', token: admin });
   check('R12 令牌续期', Boolean(refreshed.payload.data?.token));
@@ -318,9 +310,13 @@ async function main() {
   // ---------- R4 报表 ----------
   const reportCases = [
     ['campaign', 'xlsx', { campaignId }],
+    ['campaign', 'pdf', { campaignId }],
     ['daily', 'xlsx', { from: '2026-12-01', to: '2026-12-05', campaignIds: [campaignId] }],
+    ['daily', 'pdf', { from: '2026-12-01', to: '2026-12-05', campaignIds: [campaignId] }],
     ['weekly', 'xlsx', { from: '2026-12-01', to: '2026-12-05' }],
+    ['weekly', 'pdf', { from: '2026-12-01', to: '2026-12-05' }],
     ['detail', 'xlsx', { from: '2026-12-01', to: '2026-12-05', campaignIds: [campaignId] }],
+    ['detail', 'pdf', { from: '2026-12-01', to: '2026-12-05', campaignIds: [campaignId] }],
   ];
   for (const [type, format, extra] of reportCases) {
     const report = await api('/api/v1/reports', {
@@ -329,11 +325,24 @@ async function main() {
       body: { type, format, ...extra },
     });
     const data = report.payload.data;
-    check(`R4 ${type}.${format} 生成`, report.status === 200 && data?.status === 'success', JSON.stringify(report.payload));
+    check(
+      `R4 ${type}.${format} 生成`,
+      report.status === 200 && data?.status === 'success' && data?.format === format,
+      JSON.stringify(report.payload)
+    );
     if (data?.id) {
-      check(`R4 ${type}.${format} 文件名/大小`, Boolean(data.fileName) && data.fileSize > 0, JSON.stringify(data));
+      check(
+        `R4 ${type}.${format} 文件名/大小`,
+        data.fileName?.endsWith(`.${format}`) && data.fileSize > 0,
+        JSON.stringify(data)
+      );
       const download = await api(`/api/v1/reports/${data.id}/download`, { token: admin });
-      check(`R4 ${type}.${format} 下载`, download.status === 200 && download.payload.byteLength > 1000);
+      const contentType = download.headers.get('content-type') || '';
+      const typeOk = format === 'pdf' ? contentType.includes('pdf') : contentType.includes('spreadsheetml');
+      check(
+        `R4 ${type}.${format} 下载`,
+        download.status === 200 && download.payload.byteLength > 1000 && typeOk
+      );
     }
   }
   const reportList = await api('/api/v1/reports', { token: admin });
@@ -345,6 +354,15 @@ async function main() {
   check('R10 清空计划数据', cleared.payload.data?.cleared === true && cleared.payload.data?.deletedDays === 5);
   const afterClear = await api(`/api/v1/campaigns/${campaignId}/stats`, { token: admin });
   check('R10 清空后无分日数据', afterClear.payload.data?.rows.length === 0);
+
+  // ---------- 删除渠道 ----------
+  const channelDeleted = await api(`/api/v1/channels/${channel.payload.data.id}`, {
+    method: 'DELETE',
+    token: admin,
+  });
+  check('删除渠道', channelDeleted.payload.data?.deleted === true);
+  const channelActive = await api('/api/v1/channels/active', { token: admin });
+  check('删除后不在启用列表', !channelActive.payload.data?.some((c) => c.code === channelCode));
 
   // ---------- 普通用户 ----------
   const user = await api('/api/v1/users', {

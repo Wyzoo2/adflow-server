@@ -90,7 +90,7 @@ npm start
 
 系统初始只创建这一个管理员账号；普通用户由管理员在「用户管理」中新增，登录后只能看到本人创建的计划与数据。
 
-投放渠道由管理员在「渠道管理」中维护，迁移已内置抖音、微信朋友圈、小红书、快手、百度、其他 6 个常用渠道，可改名、停用或删除。
+投放渠道完全由管理员在「渠道管理」中创建；`npm run setup` 只建表并创建 `root` 管理员，不写入任何渠道、项目、计划等业务数据。
 
 ## 新增表与结构变更
 
@@ -187,7 +187,7 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 | 看板 | GET `/api/v1/dashboard/summary` | 汇总指标 |
 | 看板 | GET `/api/v1/dashboard/trend` | 按日趋势 |
 | 看板 | GET `/api/v1/dashboard/dimensions` | 地域/性别/年龄分布 |
-| 报表 | POST `/api/v1/reports` | 日报/周报/结案/明细，导出 xlsx |
+| 报表 | POST `/api/v1/reports` | 日报/周报/结案/明细，xlsx 或 pdf |
 | 报表 | GET `/api/v1/reports/{id}/download` | 下载报表 |
 | 字典 | GET `/api/v1/dicts` | 渠道、年龄段、兴趣、指标口径 |
 | 日志 | GET `/api/v1/logs` | 审计日志（管理员） |
@@ -223,7 +223,7 @@ npm run seed:force
 ## 验证
 
 ```bash
-# 服务启动后执行，覆盖 R1-R15 补充需求、渠道/厂商管理、计划全流程、模拟生成、Excel 导入、四类报表、权限与跨域（63 项）
+# 服务启动后执行，覆盖 R1-R15 补充需求、渠道/厂商管理、计划全流程、模拟生成、Excel 导入、四类报表、权限与跨域（75 项）
 npm run smoke
 ```
 

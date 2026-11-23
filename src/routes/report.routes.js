@@ -12,14 +12,14 @@ export default async function reportRoutes(app) {
         tags: ['报表中心'],
         summary: '生成报表',
         description:
-          'type：daily 日报、weekly 周报、campaign 结案报告、detail 数据明细；统一导出 xlsx。campaign 必须传 campaignId；daily/weekly/detail 需要 from/to，可用 campaignIds 批量。',
+          'type：daily 日报、weekly 周报、campaign 结案报告、detail 数据明细；format：xlsx 或 pdf。campaign 必须传 campaignId；daily/weekly/detail 需要 from/to，可用 campaignIds 批量。',
         security,
         body: {
           type: 'object',
           required: ['type'],
           properties: {
             type: { type: 'string', enum: ['daily', 'weekly', 'campaign', 'detail'], description: '报表类型' },
-            format: { type: 'string', enum: ['xlsx'], default: 'xlsx', description: '文件格式，当前仅支持 xlsx' },
+            format: { type: 'string', enum: ['xlsx', 'pdf'], default: 'xlsx', description: '文件格式' },
             projectId: { type: 'string', description: '按项目过滤' },
             campaignId: { type: 'string', description: '结案报告的计划 ID（type=campaign 必填）' },
             campaignIds: {
@@ -59,18 +59,27 @@ export default async function reportRoutes(app) {
       schema: {
         tags: ['报表中心'],
         summary: '下载报表文件',
-        description: '按报表任务 ID 下载 xlsx，Content-Disposition 带中文友好文件名。',
+        description: '按报表任务 ID 下载，xlsx 或 pdf 按任务格式返回；Content-Disposition 带中文友好文件名。',
         security,
         params: idParams,
-        produces: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        produces: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/pdf',
+        ],
       },
     },
     async (request, reply) => {
       const task = await reportService.getFile(request.params.id, request.user);
+      const isPdf = task.format === 'pdf';
       // HTTP 头只允许 ASCII，中文文件名放在 filename* 中，filename 用 ASCII 兜底
-      const asciiName = `report-${task.id}.xlsx`;
+      const asciiName = `report-${task.id}.${isPdf ? 'pdf' : 'xlsx'}`;
       reply
-        .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .header(
+          'Content-Type',
+          isPdf
+            ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
         .header(
           'Content-Disposition',
           `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(task.fileName)}`
