@@ -109,6 +109,9 @@ export const mockService = {
     }
 
     const series = generateSeries({ campaign, profile, from, to });
+    const existing = await statsRepo.existingDates(id, { from, to });
+    const existingSet = new Set(existing);
+    const added = series.daily.filter((d) => !existingSet.has(d.statDate)).length;
 
     await withTransaction(async (conn) => {
       await statsRepo.upsertDaily(
@@ -125,7 +128,15 @@ export const mockService = {
         conn
       );
       await statsRepo.upsertDims(
-        series.dims.map((d) => [id, d.dimType, d.dimValue, d.impressions, d.reach, d.clicks]),
+        series.dims.map((d) => [
+          id,
+          d.statDate,
+          d.dimType,
+          d.dimValue,
+          d.impressions,
+          d.reach,
+          d.clicks,
+        ]),
         conn
       );
       await conn.query(
@@ -151,6 +162,7 @@ export const mockService = {
       from,
       to,
       days: series.daily.length,
+      added,
       totals: {
         impressions: String(series.totals.impressions),
         reach: String(series.totals.reach),

@@ -4,14 +4,25 @@ import { withTransaction, query } from '../db/pool.js';
 import { campaignRepo } from '../repositories/campaign.repo.js';
 import { projectRepo } from '../repositories/project.repo.js';
 import { statsRepo } from '../repositories/stats.repo.js';
+import { channelRepo } from '../repositories/channel.repo.js';
 import { auditRepo } from '../repositories/audit.repo.js';
 import { nextStatus, assertEditable } from '../domain/campaign-status.js';
 import { buildCampaignCode } from '../domain/code.js';
 import { completionRate, clickRate } from '../domain/metrics.js';
+import { channelName } from '../domain/dicts.js';
 import { errors } from '../utils/errors.js';
 
-const CHANNELS = ['douyin', 'wechat', 'xiaohongshu', 'kuaishou', 'baidu', 'other'];
 const ADMIN_ONLY_EVENTS = new Set(['approve', 'reject', 'publish', 'close']);
+
+/** 校验渠道存在且启用；修改计划时允许沿用原来的渠道编码 */
+async function assertChannel(code, currentCode = null) {
+  if (!code) throw errors.badRequest('投放渠道不能为空');
+  if (currentCode && code === currentCode) return;
+  const channel = await channelRepo.findByCode(code);
+  if (!channel || channel.deleted_at || Number(channel.status) !== 1) {
+    throw errors.badRequest('投放渠道不存在或已停用');
+  }
+}
 
 function scopeOf(user) {
   return user.role === 'admin' ? {} : { createdBy: user.id };
@@ -28,9 +39,6 @@ function validatePayload(payload) {
   if (payload.name !== undefined && (payload.name.length < 2 || payload.name.length > 40)) {
     throw errors.badRequest('计划名称长度需在 2 到 40 个字符之间');
   }
-  if (payload.channel !== undefined && !CHANNELS.includes(payload.channel)) {
-    throw errors.badRequest('投放渠道取值不合法');
-  }
   if (payload.startDate && payload.endDate && payload.startDate > payload.endDate) {
     throw errors.badRequest('结束日期不能早于开始日期');
   }
@@ -40,11 +48,27 @@ function validatePayload(payload) {
   if (payload.targetImpressions !== undefined && Number(payload.targetImpressions) < 0) {
     throw errors.badRequest('目标曝光量不能为负数');
   }
+  if (payload.bidType !== undefined && !['cpm', 'cpc'].includes(payload.bidType)) {
+    throw errors.badRequest('出价方式只能是 cpm 或 cpc');
+  }
+  if (payload.contractNo !== undefined && String(payload.contractNo).length > 32) {
+    throw errors.badRequest('合同号不能超过 32 个字符');
+  }
+  if (payload.dailyBudget !== undefined && Number(payload.dailyBudget) < 0) {
+    throw errors.badRequest('日预算不能为负数');
+  }
+}
+
+function assertBudget(payload, campaign = null) {
+  const budget = Number(payload.budget ?? campaign?.budget ?? 0);
+  const dailyBudget = Number(payload.dailyBudget ?? campaign?.dailyBudget ?? 0);
+  if (dailyBudget > budget) throw errors.badRequest('日预算不能大于总预算');
 }
 
 function decorate(campaign) {
   return {
     ...campaign,
+    channelName: campaign.channelName || channelName(campaign.channel),
     completionRate: completionRate(campaign.actualImpressions, campaign.targetImpressions),
   };
 }
@@ -80,14 +104,20 @@ export const campaignService = {
     campaign.actualCost = totals.cost;
     campaign.completionRate = completionRate(totals.impressions, campaign.targetImpressions);
     campaign.clickRate = clickRate(totals.clicks, totals.reach);
+    campaign.dataUpdatedAt = totals.dataUpdatedAt;
+    campaign.channelName = campaign.channelName || channelName(campaign.channel);
+    // 结案报告编号当前不单独编号，保留字段便于前端统一渲染
+    campaign.reportNo = null;
     return campaign;
   },
 
   async create(payload, user, ip) {
     validatePayload(payload);
+    assertBudget(payload);
     if (!payload.projectId || !payload.name || !payload.channel) {
       throw errors.badRequest('项目、计划名称与投放渠道不能为空');
     }
+    await assertChannel(payload.channel);
     if (!payload.startDate || !payload.endDate) throw errors.badRequest('投放排期不能为空');
     const project = await projectRepo.findById(payload.projectId);
     if (!project) throw errors.notFound('项目不存在');
@@ -118,6 +148,8 @@ export const campaignService = {
     const startDate = payload.startDate ?? campaign.startDate;
     const endDate = payload.endDate ?? campaign.endDate;
     if (startDate > endDate) throw errors.badRequest('结束日期不能早于开始日期');
+    assertBudget(payload, campaign);
+    if (payload.channel !== undefined) await assertChannel(payload.channel, campaign.channel);
     if (payload.name && (await campaignRepo.existsName(campaign.projectId, payload.name, id))) {
       throw errors.nameExists('该项目下已存在同名计划');
     }
@@ -158,7 +190,11 @@ export const campaignService = {
     }
     const campaign = await mustGet(id, user);
     const target = nextStatus(campaign.status, event);
-    await campaignRepo.setStatus(id, target);
+    const stamps = {};
+    if (event === 'submit') stamps.submittedAt = true;
+    if (event === 'finish') stamps.finishedAt = true;
+    if (event === 'close') stamps.closedAt = true;
+    await campaignRepo.setStatus(id, target, stamps);
     await auditRepo.insert({
       objectType: 'campaign',
       objectId: id,

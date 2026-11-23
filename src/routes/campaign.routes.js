@@ -1,44 +1,58 @@
 // 计划路由：CRUD、状态流转、发布、厂商多选。
-
 import { ok, paged } from '../utils/response.js';
 import { campaignService } from '../services/campaign.service.js';
 import { requireAdmin } from '../plugins/auth.js';
-import { idParams, pagingQuery, security } from '../schemas/common.js';
+import { CAMPAIGN_STATUS, CHANNEL_PATTERN, idParams, pagingQuery, security } from '../schemas/common.js';
 
-const channelEnum = ['douyin', 'wechat', 'xiaohongshu', 'kuaishou', 'baidu', 'other'];
+const targetingSchema = {
+  type: 'object',
+  description: '人群定向',
+  properties: {
+    regions: { type: 'array', items: { type: 'string' }, description: '地域名称列表，如 ["江苏省"]' },
+    gender: { type: 'string', enum: ['all', 'male', 'female'], description: '性别：all 不限' },
+    ages: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '年龄段，如 ["18-24","25-29"]',
+    },
+    interests: { type: 'array', items: { type: 'string' }, description: '兴趣标签编码' },
+  },
+};
+
+const campaignFields = {
+  name: { type: 'string', minLength: 2, maxLength: 40, description: '计划名称，同项目内唯一' },
+  channel: {
+    type: 'string',
+    minLength: 1,
+    maxLength: 32,
+    pattern: CHANNEL_PATTERN,
+    description: '投放渠道编码，须为已启用的渠道',
+  },
+  objective: { type: 'string', enum: ['impression', 'click', 'lead'], description: '投放目标' },
+  bidType: { type: 'string', enum: ['cpm', 'cpc'], description: '出价方式' },
+  budget: { type: 'number', minimum: 0, description: '总预算' },
+  dailyBudget: { type: 'number', minimum: 0, description: '日预算，不能大于总预算' },
+  contractNo: { type: 'string', maxLength: 32, description: '关联合同号' },
+  targetImpressions: { type: 'integer', minimum: 0, description: '目标曝光量' },
+  startDate: { type: 'string', description: '开始日期，格式 YYYY-MM-DD' },
+  endDate: { type: 'string', description: '结束日期，格式 YYYY-MM-DD' },
+  targeting: targetingSchema,
+  remark: { type: 'string', maxLength: 255, description: '备注' },
+  vendorIds: { type: 'array', items: { type: 'string' }, maxItems: 5, description: '投放厂商 ID，最多 5 个' },
+};
 
 const createBody = {
   type: 'object',
   required: ['projectId', 'name', 'channel', 'startDate', 'endDate'],
   properties: {
-    projectId: { type: 'string' },
-    name: { type: 'string', minLength: 2, maxLength: 40 },
-    channel: { type: 'string', enum: channelEnum },
-    objective: { type: 'string', enum: ['impression', 'click', 'lead'], default: 'impression' },
-    budget: { type: 'number', minimum: 0 },
-    targetImpressions: { type: 'integer', minimum: 0 },
-    startDate: { type: 'string', description: 'YYYY-MM-DD' },
-    endDate: { type: 'string', description: 'YYYY-MM-DD' },
-    targeting: { type: 'object', additionalProperties: true },
-    remark: { type: 'string', maxLength: 255 },
-    vendorIds: { type: 'array', items: { type: 'string' }, maxItems: 5 },
+    projectId: { type: 'string', description: '所属项目 ID' },
+    ...campaignFields,
   },
 };
 
 const updateBody = {
   type: 'object',
-  properties: {
-    name: { type: 'string', minLength: 2, maxLength: 40 },
-    channel: { type: 'string', enum: channelEnum },
-    objective: { type: 'string', enum: ['impression', 'click', 'lead'] },
-    budget: { type: 'number', minimum: 0 },
-    targetImpressions: { type: 'integer', minimum: 0 },
-    startDate: { type: 'string' },
-    endDate: { type: 'string' },
-    targeting: { type: 'object', additionalProperties: true },
-    remark: { type: 'string', maxLength: 255 },
-    vendorIds: { type: 'array', items: { type: 'string' }, maxItems: 5 },
-  },
+  properties: campaignFields,
 };
 
 const transitions = [
@@ -59,23 +73,20 @@ export default async function campaignRoutes(app) {
       schema: {
         tags: ['投放计划'],
         summary: '计划分页列表',
-        description: '普通用户只能看到本人创建的计划，管理员可查看全部。',
+        description: '普通用户只能看到本人创建的计划，管理员可查看全部；列表带实际曝光、人数、点击、消耗与完成率。',
         security,
         querystring: {
           type: 'object',
           properties: {
-            projectId: { type: 'string' },
-            keyword: { type: 'string' },
-            code: { type: 'string' },
-            channel: { type: 'string' },
-            status: {
-              type: 'string',
-              enum: ['draft', 'pending', 'scheduled', 'running', 'paused', 'finished', 'closed'],
-            },
-            from: { type: 'string' },
-            to: { type: 'string' },
-            vendorId: { type: 'string' },
-            createdBy: { type: 'string' },
+            projectId: { type: 'string', description: '项目 ID' },
+            keyword: { type: 'string', description: '计划名称或单号模糊搜索' },
+            code: { type: 'string', description: '投放单号，精确匹配' },
+            channel: { type: 'string', description: '渠道编码，精确匹配' },
+            status: { type: 'string', enum: CAMPAIGN_STATUS, description: '计划状态' },
+            from: { type: 'string', description: '排期开始日期下限，YYYY-MM-DD' },
+            to: { type: 'string', description: '排期结束日期上限，YYYY-MM-DD' },
+            vendorId: { type: 'string', description: '按关联厂商筛选' },
+            createdBy: { type: 'string', description: '创建人 ID，仅管理员生效' },
             ...pagingQuery.properties,
           },
         },
@@ -97,7 +108,16 @@ export default async function campaignRoutes(app) {
 
   app.get(
     '/:id',
-    { schema: { tags: ['投放计划'], summary: '计划详情', security, params: idParams } },
+    {
+      schema: {
+        tags: ['投放计划'],
+        summary: '计划详情',
+        description:
+          '含计划字段、渠道名称、创建人、厂商、实际曝光/人数/点击/消耗、完成率、点击率、数据更新时间与提交/结束/结案时间。',
+        security,
+        params: idParams,
+      },
+    },
     async (request) => ok(await campaignService.detail(request.params.id, request.user))
   );
 
@@ -119,7 +139,13 @@ export default async function campaignRoutes(app) {
   app.delete(
     '/:id',
     {
-      schema: { tags: ['投放计划'], summary: '删除计划', description: '仅草稿状态可删除（软删除）。', security, params: idParams },
+      schema: {
+        tags: ['投放计划'],
+        summary: '删除计划',
+        description: '仅草稿状态可删除（软删除）。',
+        security,
+        params: idParams,
+      },
     },
     async (request) => ok(await campaignService.remove(request.params.id, request.user, request.ip))
   );
@@ -137,8 +163,13 @@ export default async function campaignRoutes(app) {
         body: {
           type: 'object',
           properties: {
-            publishMode: { type: 'string', enum: ['schedule', 'immediate'], default: 'schedule' },
-            comment: { type: 'string', maxLength: 255 },
+            publishMode: {
+              type: 'string',
+              enum: ['schedule', 'immediate'],
+              default: 'schedule',
+              description: '发布方式：按排期/立即',
+            },
+            comment: { type: 'string', maxLength: 255, description: '发布备注' },
           },
         },
       },
@@ -148,7 +179,9 @@ export default async function campaignRoutes(app) {
 
   app.get(
     '/:id/vendors',
-    { schema: { tags: ['投放计划'], summary: '计划已选厂商', security, params: idParams } },
+    {
+      schema: { tags: ['投放计划'], summary: '计划已选厂商', security, params: idParams },
+    },
     async (request) => ok(await campaignService.vendorsOf(request.params.id, request.user))
   );
 
@@ -165,7 +198,13 @@ export default async function campaignRoutes(app) {
           type: 'object',
           required: ['vendorIds'],
           properties: {
-            vendorIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 5 },
+            vendorIds: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 1,
+              maxItems: 5,
+              description: '厂商 ID 列表，整体覆盖',
+            },
           },
         },
       },
@@ -182,14 +221,15 @@ export default async function campaignRoutes(app) {
         description,
         security,
         params: idParams,
-        body:
-          event === 'reject' || event === 'approve' || event === 'withdraw'
-            ? { type: 'object', properties: { comment: { type: 'string', maxLength: 255 } } }
-            : undefined,
+        body: {
+          type: 'object',
+          properties: {
+            comment: { type: 'string', maxLength: 255, description: '操作备注，写入审计日志' },
+          },
+        },
       },
     };
     if (preHandler) config.preHandler = preHandler;
-    if (!config.schema.body) delete config.schema.body;
     app.post(`/:id/${event}`, config, async (request) =>
       ok(await campaignService.transition(request.params.id, event, request.user, request.ip, request.body || {}))
     );

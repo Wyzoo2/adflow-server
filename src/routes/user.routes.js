@@ -1,6 +1,5 @@
 // 用户管理路由（仅管理员）。
-
-import { paged, ok } from '../utils/response.js';
+import { ok, paged } from '../utils/response.js';
 import { userService } from '../services/user.service.js';
 import { requireAdmin } from '../plugins/auth.js';
 import { idParams, pagingQuery, security } from '../schemas/common.js';
@@ -12,14 +11,14 @@ export default async function userRoutes(app) {
       preHandler: requireAdmin,
       schema: {
         tags: ['用户管理'],
-        summary: '用户列表',
+        summary: '用户分页列表',
         security,
         querystring: {
           type: 'object',
           properties: {
-            keyword: { type: 'string' },
-            role: { type: 'string', enum: ['admin', 'user'] },
-            status: { type: 'string', enum: ['0', '1'] },
+            keyword: { type: 'string', description: '登录名或显示名模糊搜索' },
+            role: { type: 'string', enum: ['admin', 'user'], description: '身份筛选' },
+            status: { type: 'string', enum: ['0', '1'], description: '状态筛选：1 启用，0 停用' },
             ...pagingQuery.properties,
           },
         },
@@ -43,11 +42,11 @@ export default async function userRoutes(app) {
           type: 'object',
           required: ['username', 'password', 'displayName', 'role'],
           properties: {
-            username: { type: 'string', minLength: 3, maxLength: 64 },
-            password: { type: 'string', minLength: 6, maxLength: 64 },
-            displayName: { type: 'string', minLength: 1, maxLength: 64 },
-            role: { type: 'string', enum: ['admin', 'user'] },
-            status: { type: 'integer', enum: [0, 1], default: 1 },
+            username: { type: 'string', minLength: 3, maxLength: 64, description: '登录名，全局唯一' },
+            password: { type: 'string', minLength: 6, maxLength: 64, description: '初始密码，至少 6 位' },
+            displayName: { type: 'string', minLength: 1, maxLength: 64, description: '显示名' },
+            role: { type: 'string', enum: ['admin', 'user'], description: '身份：admin 管理员 / user 普通用户' },
+            status: { type: 'integer', enum: [0, 1], default: 1, description: '1 启用，0 停用' },
           },
         },
       },
@@ -67,9 +66,9 @@ export default async function userRoutes(app) {
         body: {
           type: 'object',
           properties: {
-            displayName: { type: 'string', maxLength: 64 },
-            role: { type: 'string', enum: ['admin', 'user'] },
-            status: { type: 'integer', enum: [0, 1] },
+            displayName: { type: 'string', minLength: 1, maxLength: 64, description: '显示名' },
+            role: { type: 'string', enum: ['admin', 'user'], description: '身份' },
+            status: { type: 'integer', enum: [0, 1], description: '1 启用，0 停用；不能停用自己' },
           },
         },
       },
@@ -89,7 +88,9 @@ export default async function userRoutes(app) {
         body: {
           type: 'object',
           required: ['password'],
-          properties: { password: { type: 'string', minLength: 6 } },
+          properties: {
+            password: { type: 'string', minLength: 6, maxLength: 64, description: '新密码，至少 6 位' },
+          },
         },
       },
     },
@@ -101,7 +102,13 @@ export default async function userRoutes(app) {
     '/:id',
     {
       preHandler: requireAdmin,
-      schema: { tags: ['用户管理'], summary: '停用用户（软删除）', security, params: idParams },
+      schema: {
+        tags: ['用户管理'],
+        summary: '停用用户（软删除）',
+        description: '将账号状态置为停用，保留历史操作记录；不能停用当前登录账号。',
+        security,
+        params: idParams,
+      },
     },
     async (request) => ok(await userService.remove(request.params.id, request.user, request.ip))
   );

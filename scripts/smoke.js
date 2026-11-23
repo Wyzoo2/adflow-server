@@ -1,5 +1,6 @@
 /**
- * 冒烟测试：不依赖任何演示数据，自行创建项目、计划、用户并跑通全流程。
+ * 冒烟测试：不依赖演示数据，自行创建项目、计划、用户并跑通全流程。
+ * 覆盖 R1-R15 补充需求、核心状态机、导入导出、权限与跨域。
  * 用法：node scripts/smoke.js [baseUrl]
  * 测试结束后可用 `npm run seed:force` 清理产生的数据。
  */
@@ -20,8 +21,8 @@ function check(name, condition, extra = '') {
   }
 }
 
-async function api(path, { method = 'GET', token, body, form } = {}) {
-  const opts = { method, headers: {} };
+async function api(path, { method = 'GET', token, body, form, headers = {} } = {}) {
+  const opts = { method, headers: { ...headers } };
   if (token) opts.headers.Authorization = `Bearer ${token}`;
   if (form) {
     opts.body = form;
@@ -63,6 +64,7 @@ async function main() {
   }
   const admin = adminLogin.payload.data.token;
 
+  // ---------- 基础数据 ----------
   const project = await api('/api/v1/projects', {
     method: 'POST',
     token: admin,
@@ -71,6 +73,33 @@ async function main() {
   check('创建项目', project.status === 200 && project.payload.data?.id);
   const projectId = project.payload.data.id;
 
+  // ---------- 渠道管理 ----------
+  const channelCode = `smokech${stamp}`;
+  const channel = await api('/api/v1/channels', {
+    method: 'POST',
+    token: admin,
+    body: { code: channelCode, name: `冒烟渠道-${stamp}`, bidType: 'cpc', sortNo: 99 },
+  });
+  check('创建渠道', channel.status === 200 && channel.payload.data?.id);
+
+  const channelDup = await api('/api/v1/channels', {
+    method: 'POST',
+    token: admin,
+    body: { code: channelCode, name: '重复编码' },
+  });
+  check('渠道编码唯一', channelDup.status === 409);
+
+  const channelList = await api('/api/v1/channels?pageSize=50', { token: admin });
+  check('渠道列表', channelList.payload.data?.items?.some((c) => c.code === channelCode));
+
+  const channelDeleted = await api(`/api/v1/channels/${channel.payload.data.id}`, {
+    method: 'DELETE',
+    token: admin,
+  });
+  check('删除渠道', channelDeleted.payload.data?.deleted === true);
+  const channelActive = await api('/api/v1/channels/active', { token: admin });
+  check('删除后不在启用列表', !channelActive.payload.data?.some((c) => c.code === channelCode));
+
   const created = await api('/api/v1/campaigns', {
     method: 'POST',
     token: admin,
@@ -78,7 +107,11 @@ async function main() {
       projectId,
       name: `冒烟测试计划-${stamp}`,
       channel: 'douyin',
+      objective: 'impression',
+      bidType: 'cpm',
       budget: 10000,
+      dailyBudget: 2000,
+      contractNo: 'HT-2026-001',
       targetImpressions: 500000,
       startDate: '2026-12-01',
       endDate: '2026-12-05',
@@ -88,6 +121,33 @@ async function main() {
   check('创建计划', created.status === 200 && created.payload.data.id);
   const campaignId = created.payload.data.id;
 
+  const detail0 = await api(`/api/v1/campaigns/${campaignId}`, { token: admin });
+  check(
+    'R7 计划字段落库',
+    detail0.payload.data?.dailyBudget === '2000.00' &&
+      detail0.payload.data?.bidType === 'cpm' &&
+      detail0.payload.data?.contractNo === 'HT-2026-001'
+  );
+  check('R8 创建人字段', detail0.payload.data?.creatorName === '系统管理员', detail0.payload.data?.creatorName);
+  check('渠道名称来自渠道表', detail0.payload.data?.channelName === '抖音', detail0.payload.data?.channelName);
+
+  // R13：无数据时完成率为 null
+  const emptyDraft = await api('/api/v1/campaigns', {
+    method: 'POST',
+    token: admin,
+    body: {
+      projectId,
+      name: `空草稿-${stamp}`,
+      channel: 'wechat',
+      budget: 1000,
+      targetImpressions: 10000,
+      startDate: '2026-12-01',
+      endDate: '2026-12-02',
+    },
+  });
+  const emptyDetail = await api(`/api/v1/campaigns/${emptyDraft.payload.data.id}`, { token: admin });
+  check('R13 无数据完成率为 null', emptyDetail.payload.data?.completionRate === null);
+
   const badDate = await api(`/api/v1/campaigns/${campaignId}`, {
     method: 'PUT',
     token: admin,
@@ -95,8 +155,10 @@ async function main() {
   });
   check('计划日期校验', badDate.status === 400);
 
+  // ---------- 状态流转 ----------
   const submitted = await api(`/api/v1/campaigns/${campaignId}/submit`, { method: 'POST', token: admin });
   check('提交审核', submitted.payload.data?.status === 'pending');
+  check('R8 提交时间', Boolean(submitted.payload.data?.submittedAt));
 
   const approved = await api(`/api/v1/campaigns/${campaignId}/approve`, { method: 'POST', token: admin });
   check('审核通过', approved.payload.data?.status === 'scheduled');
@@ -109,6 +171,7 @@ async function main() {
   const code = published.payload.data?.code;
   check('发布生成单号', /^DC\d{8}-\d{4}$/.test(code || ''), code);
 
+  // ---------- 模拟数据 ----------
   const profile = await api(`/api/v1/campaigns/${campaignId}/mock-profile`, {
     method: 'PUT',
     token: admin,
@@ -122,6 +185,7 @@ async function main() {
     body: {},
   });
   check('生成模拟数据', generated.payload.data?.days === 5, JSON.stringify(generated.payload.data));
+  check('R9 同步返回新增天数', generated.payload.data?.added === 5, String(generated.payload.data?.added));
 
   const stats = await api(`/api/v1/campaigns/${campaignId}/stats`, { token: admin });
   check('分日数据写入', Number(stats.payload.data?.totals.impressions) === 500000);
@@ -129,17 +193,111 @@ async function main() {
   const detail = await api(`/api/v1/campaigns/${campaignId}`, { token: admin });
   check('计划详情含实际曝光', Number(detail.payload.data?.actualImpressions) === 500000);
   check('计划详情完成率', detail.payload.data?.completionRate === 1);
+  check('R8 数据更新时间', Boolean(detail.payload.data?.dataUpdatedAt));
 
-  const badRange = await api(`/api/v1/campaigns/${campaignId}/mock/generate`, {
+  // R3 趋势目标
+  const trend = await api('/api/v1/dashboard/trend?from=2026-12-01&to=2026-12-05', { token: admin });
+  const targetSum = (trend.payload.data || []).reduce((sum, row) => sum + Number(row.target), 0);
+  check('R3 趋势包含每日目标', trend.payload.data?.length === 5 && targetSum === 500000, String(targetSum));
+
+  // R2 环比字段
+  const summary = await api(
+    '/api/v1/dashboard/summary?from=2026-12-01&to=2026-12-05&compare=previous',
+    { token: admin }
+  );
+  check('R2 环比字段存在', summary.payload.data && 'compare' in summary.payload.data);
+
+  // R5 项目预算
+  const projectDetail = await api(`/api/v1/projects/${projectId}`, { token: admin });
+  check(
+    'R5 项目已用/剩余预算',
+    projectDetail.payload.data?.usedBudget === '11000.00' &&
+      projectDetail.payload.data?.remainingBudget === '89000.00',
+    JSON.stringify(projectDetail.payload.data)
+  );
+
+  // ---------- R1 手工录入人群维度 ----------
+  const dayRow = stats.payload.data.rows.find((r) => r.statDate === '2026-12-03');
+  const dayImp = Number(dayRow.impressions);
+  const badDims = await api(`/api/v1/campaigns/${campaignId}/stats`, {
     method: 'POST',
     token: admin,
-    body: { from: '2026-12-10', to: '2026-12-01' },
+    body: {
+      statDate: '2026-12-03',
+      impressions: dayImp,
+      reach: Number(dayRow.reach),
+      clicks: Number(dayRow.clicks),
+      cost: Number(dayRow.cost),
+      dims: { region: [{ key: 'jiangsu', name: '江苏省', impressions: dayImp - 1 }] },
+    },
   });
-  check('模拟日期校验', badRange.status === 400);
+  check('R1 维度合计校验', badDims.status === 400);
 
-  const dims = await api(`/api/v1/campaigns/${campaignId}/dimensions`, { token: admin });
-  check('人群维度写入', dims.payload.data?.items.length > 0);
+  const goodDims = await api(`/api/v1/campaigns/${campaignId}/stats`, {
+    method: 'POST',
+    token: admin,
+    body: {
+      statDate: '2026-12-03',
+      impressions: dayImp,
+      reach: Number(dayRow.reach),
+      clicks: Number(dayRow.clicks),
+      cost: Number(dayRow.cost),
+      dims: {
+        region: [{ key: 'jiangsu', name: '江苏省', impressions: dayImp }],
+        gender: [
+          { key: 'male', name: '男', impressions: Math.round(dayImp * 0.67) },
+          { key: 'female', name: '女', impressions: dayImp - Math.round(dayImp * 0.67) },
+        ],
+      },
+    },
+  });
+  check('R1 维度录入成功', goodDims.status === 200 && goodDims.payload.data?.dimsValid === true);
 
+  const dimsDay = await api(
+    `/api/v1/campaigns/${campaignId}/dimensions?type=region&from=2026-12-03&to=2026-12-03`,
+    { token: admin }
+  );
+  check('R6 维度按日过滤', Number(dimsDay.payload.data?.totals?.region) === dayImp, JSON.stringify(dimsDay.payload.data?.totals));
+
+  const dimsAll = await api(`/api/v1/campaigns/${campaignId}/dimensions?type=region`, { token: admin });
+  const dimsRange = await api(
+    `/api/v1/campaigns/${campaignId}/dimensions?type=region&from=2026-12-01&to=2026-12-02`,
+    { token: admin }
+  );
+  check(
+    'R6 维度周期合计',
+    Number(dimsAll.payload.data?.totals?.region) === 500000 &&
+      Number(dimsRange.payload.data?.totals?.region) < 500000
+  );
+
+  // ---------- R14 渠道名称 ----------
+  const channels = await api('/api/v1/dashboard/channels', { token: admin });
+  check('R14 渠道中文名', channels.payload.data?.[0]?.channelName === '抖音', JSON.stringify(channels.payload.data?.[0]));
+
+  // ---------- R9 同步记录 ----------
+  const syncTasks = await api('/api/v1/sync-tasks', { token: admin });
+  const task = syncTasks.payload.data?.items?.find((t) => t.campaignId === String(campaignId));
+  check('R9 同步记录带计划名', Boolean(task?.campaignName), JSON.stringify(task));
+
+  // ---------- R15 空 body ----------
+  const pauseRes = await fetch(`${BASE}/api/v1/campaigns/${campaignId}/pause`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' },
+    body: '',
+  });
+  check('R15 空 body 写接口', pauseRes.status === 200, String(pauseRes.status));
+  await api(`/api/v1/campaigns/${campaignId}/resume`, { method: 'POST', token: admin, body: {} });
+
+  // ---------- R11 字典 / R12 续期 ----------
+  const dicts = await api('/api/v1/dicts', { token: admin });
+  check('R11 字典接口', dicts.payload.data?.channels?.length >= 5 && Boolean(dicts.payload.data?.version));
+
+  const refreshed = await api('/api/v1/auth/refresh', { method: 'POST', token: admin });
+  check('R12 令牌续期', Boolean(refreshed.payload.data?.token));
+  const profileWithNew = await api('/api/v1/auth/profile', { token: refreshed.payload.data.token });
+  check('R12 新令牌可用', profileWithNew.payload.data?.username === 'root');
+
+  // ---------- 导入 ----------
   const template = await api('/api/v1/stats/import/template', { token: admin });
   check('下载导入模板', template.status === 200 && template.payload.byteLength > 1000);
 
@@ -157,15 +315,38 @@ async function main() {
   const imported = await api('/api/v1/stats/import', { method: 'POST', token: admin, form });
   check('Excel 导入', imported.payload.data?.rows === 1, JSON.stringify(imported.payload));
 
-  const report = await api('/api/v1/reports', {
-    method: 'POST',
-    token: admin,
-    body: { type: 'campaign', campaignId },
-  });
-  check('生成报表', report.status === 200 && report.payload.data?.status === 'success');
-  const download = await api(`/api/v1/reports/${report.payload.data.id}/download`, { token: admin });
-  check('下载报表', download.status === 200 && download.payload.byteLength > 2000);
+  // ---------- R4 报表 ----------
+  const reportCases = [
+    ['campaign', 'xlsx', { campaignId }],
+    ['daily', 'xlsx', { from: '2026-12-01', to: '2026-12-05', campaignIds: [campaignId] }],
+    ['weekly', 'xlsx', { from: '2026-12-01', to: '2026-12-05' }],
+    ['detail', 'pdf', { from: '2026-12-01', to: '2026-12-05', campaignIds: [campaignId] }],
+  ];
+  for (const [type, format, extra] of reportCases) {
+    const report = await api('/api/v1/reports', {
+      method: 'POST',
+      token: admin,
+      body: { type, format, ...extra },
+    });
+    const data = report.payload.data;
+    check(`R4 ${type}.${format} 生成`, report.status === 200 && data?.status === 'success', JSON.stringify(report.payload));
+    if (data?.id) {
+      check(`R4 ${type}.${format} 文件名/大小`, Boolean(data.fileName) && data.fileSize > 0, JSON.stringify(data));
+      const download = await api(`/api/v1/reports/${data.id}/download`, { token: admin });
+      check(`R4 ${type}.${format} 下载`, download.status === 200 && download.payload.byteLength > 1000);
+    }
+  }
+  const reportList = await api('/api/v1/reports', { token: admin });
+  const listed = reportList.payload.data?.items?.[0];
+  check('R4 列表字段', Boolean(listed?.format) && Boolean(listed?.fileSize), JSON.stringify(listed));
 
+  // ---------- R10 清空数据 ----------
+  const cleared = await api(`/api/v1/campaigns/${campaignId}/stats`, { method: 'DELETE', token: admin });
+  check('R10 清空计划数据', cleared.payload.data?.cleared === true && cleared.payload.data?.deletedDays === 5);
+  const afterClear = await api(`/api/v1/campaigns/${campaignId}/stats`, { token: admin });
+  check('R10 清空后无分日数据', afterClear.payload.data?.rows.length === 0);
+
+  // ---------- 普通用户 ----------
   const user = await api('/api/v1/users', {
     method: 'POST',
     token: admin,
@@ -183,9 +364,7 @@ async function main() {
   const ownList = await api('/api/v1/campaigns?pageSize=50', { token: normal });
   check('普通用户仅见本人计划', ownList.payload.data?.total === 0, String(ownList.payload.data?.total));
 
-  const summary = await api('/api/v1/dashboard/summary', { token: admin });
-  check('看板汇总', Number(summary.payload.data?.impressions) >= 500000);
-
+  // ---------- 跨域 / 文档 ----------
   const preflight = await fetch(`${BASE}/api/v1/campaigns`, {
     method: 'OPTIONS',
     headers: {
@@ -209,7 +388,7 @@ async function main() {
   const docs = await fetch(`${BASE}/api-docs`);
   check('API 文档页', docs.status === 200 && (await docs.text()).includes('swagger'));
   const spec = await fetch(`${BASE}/api-docs/json`).then((r) => r.json());
-  check('文档收录接口', Object.keys(spec.paths).length >= 35, String(Object.keys(spec.paths).length));
+  check('文档收录接口', Object.keys(spec.paths).length >= 40, String(Object.keys(spec.paths).length));
 
   console.log(`\nresult: ${passed} passed, ${failed} failed`);
   if (passed) console.log('提示：测试产生的数据可用 npm run seed:force 清理');

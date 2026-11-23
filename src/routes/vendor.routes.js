@@ -1,20 +1,34 @@
 // 厂商管理路由。
-
-import { paged, ok } from '../utils/response.js';
+import { ok, paged } from '../utils/response.js';
 import { vendorService } from '../services/vendor.service.js';
 import { requireAdmin } from '../plugins/auth.js';
 import { idParams, pagingQuery, security } from '../schemas/common.js';
 
-const vendorBody = {
+const platformEnum = ['douyin', 'wechat', 'xiaohongshu', 'kuaishou', 'baidu', 'other'];
+
+const createBody = {
+  type: 'object',
+  required: ['code', 'name', 'platform'],
+  properties: {
+    code: { type: 'string', minLength: 1, maxLength: 32, description: '厂商编码，全局唯一' },
+    name: { type: 'string', minLength: 1, maxLength: 120, description: '厂商名称' },
+    platform: { type: 'string', enum: platformEnum, description: '所属平台' },
+    contactName: { type: 'string', maxLength: 64, description: '商务联系人' },
+    contactPhone: { type: 'string', maxLength: 32, description: '联系电话' },
+    status: { type: 'integer', enum: [0, 1], default: 1, description: '1 启用，0 停用' },
+    remark: { type: 'string', maxLength: 255, description: '合作范围与结算说明' },
+  },
+};
+
+const updateBody = {
   type: 'object',
   properties: {
-    code: { type: 'string', minLength: 1, maxLength: 32 },
-    name: { type: 'string', minLength: 1, maxLength: 120 },
-    platform: { type: 'string', enum: ['douyin', 'wechat', 'xiaohongshu', 'kuaishou', 'baidu', 'other'] },
-    contactName: { type: 'string', maxLength: 64 },
-    contactPhone: { type: 'string', maxLength: 32 },
-    status: { type: 'integer', enum: [0, 1] },
-    remark: { type: 'string', maxLength: 255 },
+    name: { type: 'string', minLength: 1, maxLength: 120, description: '厂商名称' },
+    platform: { type: 'string', enum: platformEnum, description: '所属平台' },
+    contactName: { type: 'string', maxLength: 64, description: '商务联系人' },
+    contactPhone: { type: 'string', maxLength: 32, description: '联系电话' },
+    status: { type: 'integer', enum: [0, 1], description: '1 启用，0 停用' },
+    remark: { type: 'string', maxLength: 255, description: '备注' },
   },
 };
 
@@ -29,9 +43,9 @@ export default async function vendorRoutes(app) {
         querystring: {
           type: 'object',
           properties: {
-            keyword: { type: 'string' },
-            platform: { type: 'string' },
-            status: { type: 'string', enum: ['0', '1'] },
+            keyword: { type: 'string', description: '厂商名称或编码模糊搜索' },
+            platform: { type: 'string', enum: platformEnum, description: '按所属平台筛选' },
+            status: { type: 'string', enum: ['0', '1'], description: '1 启用，0 停用' },
             ...pagingQuery.properties,
           },
         },
@@ -46,7 +60,12 @@ export default async function vendorRoutes(app) {
   app.get(
     '/active',
     {
-      schema: { tags: ['厂商管理'], summary: '启用中的厂商（发布向导用）', security },
+      schema: {
+        tags: ['厂商管理'],
+        summary: '启用中的厂商（发布向导用）',
+        description: '只返回 status=1 且未删除的厂商，供计划选择。',
+        security,
+      },
     },
     async () => ok(await vendorService.active())
   );
@@ -54,7 +73,7 @@ export default async function vendorRoutes(app) {
   app.get(
     '/:id',
     {
-      schema: { tags: ['厂商管理'], summary: '厂商详情', security, params: idParams },
+      schema: { tags: ['厂商管理'], summary: '厂商详情', description: '含关联计划数', security, params: idParams },
     },
     async (request) => ok(await vendorService.detail(request.params.id))
   );
@@ -63,12 +82,7 @@ export default async function vendorRoutes(app) {
     '',
     {
       preHandler: requireAdmin,
-      schema: {
-        tags: ['厂商管理'],
-        summary: '新增厂商',
-        security,
-        body: { ...vendorBody, required: ['code', 'name', 'platform'] },
-      },
+      schema: { tags: ['厂商管理'], summary: '新增厂商', security, body: createBody },
     },
     async (request) => ok(await vendorService.create(request.body, request.user, request.ip))
   );
@@ -77,7 +91,14 @@ export default async function vendorRoutes(app) {
     '/:id',
     {
       preHandler: requireAdmin,
-      schema: { tags: ['厂商管理'], summary: '修改厂商', security, params: idParams, body: vendorBody },
+      schema: {
+        tags: ['厂商管理'],
+        summary: '修改厂商',
+        description: '厂商编码创建后不可修改；已关联计划的厂商建议停用而不是删除。',
+        security,
+        params: idParams,
+        body: updateBody,
+      },
     },
     async (request) => ok(await vendorService.update(request.params.id, request.body, request.user, request.ip))
   );

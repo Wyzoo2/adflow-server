@@ -50,6 +50,39 @@ function assertDateInRange(campaign, statDate) {
   }
 }
 
+/** 把前端传入的 dims 校验并转换成 dim_stat 行；三组合计必须等于当日曝光 */
+function buildDimRows(dims, campaignId, statDate, totalImpressions) {
+  if (!dims) return [];
+  const rows = [];
+  for (const type of ['region', 'gender', 'age']) {
+    const items = dims[type];
+    if (items === undefined) continue;
+    if (!Array.isArray(items) || items.length === 0) {
+      throw errors.badRequest(`维度 ${type} 不能为空数组`);
+    }
+    let sum = 0;
+    for (const item of items) {
+      const value = String(item.name || item.key || '').trim();
+      if (!value) throw errors.badRequest('维度名称不能为空');
+      const imp = toInt(item.impressions, `${type} 维度曝光量`);
+      sum += imp;
+      rows.push([
+        campaignId,
+        statDate,
+        type,
+        value.slice(0, 32),
+        imp,
+        toInt(item.reach ?? 0, `${type} 维度曝光人数`),
+        toInt(item.clicks ?? 0, `${type} 维度点击人数`),
+      ]);
+    }
+    if (sum !== totalImpressions) {
+      throw errors.badRequest(`${type} 维度合计 ${sum} 与曝光量 ${totalImpressions} 不一致`);
+    }
+  }
+  return rows;
+}
+
 export const statsService = {
   async daily(id, query, user) {
     const campaign = await accessCampaign(id, user);
@@ -70,13 +103,17 @@ export const statsService = {
 
   async dimensions(id, query, user) {
     await accessCampaign(id, user);
-    const rows = await statsRepo.listDims(id, query.type);
+    const rows = await statsRepo.listDims(id, query);
     const grouped = rows.reduce((acc, row) => {
       acc[row.dimType] = acc[row.dimType] || [];
       acc[row.dimType].push(row);
       return acc;
     }, {});
-    return { campaignId: id, items: rows, grouped };
+    const totals = rows.reduce((acc, row) => {
+      acc[row.dimType] = (acc[row.dimType] || 0) + Number(row.impressions);
+      return acc;
+    }, {});
+    return { campaignId: id, items: rows, grouped, totals };
   },
 
   async upsert(id, payload, user, ip) {
@@ -87,19 +124,23 @@ export const statsService = {
     const statDate = payload.statDate;
     assertDateInRange(campaign, statDate);
     const values = validateValues(payload);
+    const dimRows = buildDimRows(payload.dims, id, statDate, values.impressions);
 
-    await statsRepo.upsertDaily([
-      [id, statDate, values.impressions, values.reach, values.clicks, values.cost, 'manual', user.id],
-    ]);
+    await withTransaction(async (conn) => {
+      await statsRepo.upsertDaily([
+        [id, statDate, values.impressions, values.reach, values.clicks, values.cost, 'manual', user.id],
+      ], conn);
+      if (dimRows.length) await statsRepo.upsertDims(dimRows, conn);
+    });
     await auditRepo.insert({
       objectType: 'campaign',
       objectId: id,
       action: 'stats_upsert',
-      after: { statDate, ...values },
+      after: { statDate, ...values, dims: dimRows.length || undefined },
       operatorId: user.id,
       ip,
     });
-    return { campaignId: id, statDate, ...values };
+    return { campaignId: id, statDate, ...values, dimsValid: dimRows.length > 0 };
   },
 
   async adjust(id, statDate, payload, user, ip) {
@@ -238,8 +279,24 @@ export const statsService = {
     return { rows: rows.length, campaigns: [...campaigns.keys()] };
   },
 
-  async sync(id, user, ip) {
-    return mockService.generate(id, {}, user, ip);
+  /** 清空单个计划的模拟/投放数据，便于演示前重置 */
+  async clear(id, user, ip) {
+    if (user.role !== 'admin') throw errors.forbidden('清空数据仅管理员可执行');
+    await accessCampaign(id, user);
+    const deletedDays = await statsRepo.clearCampaign(id);
+    await auditRepo.insert({
+      objectType: 'campaign',
+      objectId: id,
+      action: 'stats_clear',
+      after: { deletedDays },
+      operatorId: user.id,
+      ip,
+    });
+    return { campaignId: id, cleared: true, deletedDays };
+  },
+
+  async sync(id, user, ip, options = {}) {
+    return mockService.generate(id, options, user, ip);
   },
 
   async template() {

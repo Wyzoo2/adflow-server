@@ -9,23 +9,31 @@ const mapCampaign = (row) => ({
   code: row.code,
   name: row.name,
   channel: row.channel,
+  channelName: row.channel_name || undefined,
   objective: row.objective,
+  bidType: row.bid_type,
   status: row.status,
   budget: row.budget,
+  dailyBudget: row.daily_budget,
   targetImpressions: String(row.target_impressions),
   startDate: row.start_date,
   endDate: row.end_date,
   targeting: row.targeting || null,
   remark: row.remark,
+  contractNo: row.contract_no,
   createdBy: String(row.created_by),
+  creatorName: row.creator_name || null,
   publishedAt: row.published_at,
+  submittedAt: row.submitted_at,
+  finishedAt: row.finished_at,
+  closedAt: row.closed_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   vendors: row.vendors || [],
-  actualImpressions: row.stat_impressions === undefined ? undefined : String(row.stat_impressions),
-  actualReach: row.stat_reach === undefined ? undefined : String(row.stat_reach),
-  actualClicks: row.stat_clicks === undefined ? undefined : String(row.stat_clicks),
-  actualCost: row.stat_cost === undefined ? undefined : row.stat_cost,
+  actualImpressions: row.stat_impressions == null ? null : String(row.stat_impressions),
+  actualReach: row.stat_reach == null ? null : String(row.stat_reach),
+  actualClicks: row.stat_clicks == null ? null : String(row.stat_clicks),
+  actualCost: row.stat_cost == null ? null : row.stat_cost,
 });
 
 function buildFilters(filters) {
@@ -98,13 +106,15 @@ export const campaignRepo = {
   async list(filters, { offset, limit }) {
     const { clause, params } = buildFilters(filters);
     const rows = await query(
-      `SELECT c.*, p.name AS project_name,
+      `SELECT c.*, p.name AS project_name, u.display_name AS creator_name, ch.name AS channel_name,
               s.impressions AS stat_impressions,
               s.reach       AS stat_reach,
               s.clicks      AS stat_clicks,
               s.cost        AS stat_cost
          FROM campaign c
          LEFT JOIN project p ON p.id = c.project_id
+         LEFT JOIN sys_user u ON u.id = c.created_by
+         LEFT JOIN channel ch ON ch.code = c.channel
          LEFT JOIN (
            SELECT campaign_id,
                   SUM(impressions) AS impressions,
@@ -132,8 +142,11 @@ export const campaignRepo = {
       params.push(scope.createdBy);
     }
     const row = await queryOne(
-      `SELECT c.*, p.name AS project_name
-         FROM campaign c LEFT JOIN project p ON p.id = c.project_id
+      `SELECT c.*, p.name AS project_name, u.display_name AS creator_name, ch.name AS channel_name
+         FROM campaign c
+         LEFT JOIN project p ON p.id = c.project_id
+         LEFT JOIN sys_user u ON u.id = c.created_by
+         LEFT JOIN channel ch ON ch.code = c.channel
         WHERE ${where.join(' AND ')}`,
       params
     );
@@ -178,21 +191,24 @@ export const campaignRepo = {
   async create(payload) {
     const result = await execute(
       `INSERT INTO campaign
-         (project_id, name, channel, objective, status, budget, target_impressions,
-          start_date, end_date, targeting, remark, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (project_id, name, channel, objective, bid_type, status, budget, daily_budget,
+          target_impressions, start_date, end_date, targeting, remark, contract_no, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         payload.projectId,
         payload.name,
         payload.channel,
         payload.objective || 'impression',
+        payload.bidType || 'cpm',
         payload.status || 'draft',
         payload.budget || 0,
+        payload.dailyBudget || 0,
         payload.targetImpressions || 0,
         payload.startDate,
         payload.endDate,
         payload.targeting ? JSON.stringify(payload.targeting) : null,
         payload.remark || null,
+        payload.contractNo || null,
         payload.createdBy,
       ]
     );
@@ -206,11 +222,14 @@ export const campaignRepo = {
       name: 'name',
       channel: 'channel',
       objective: 'objective',
+      bidType: 'bid_type',
       budget: 'budget',
+      dailyBudget: 'daily_budget',
       targetImpressions: 'target_impressions',
       startDate: 'start_date',
       endDate: 'end_date',
       remark: 'remark',
+      contractNo: 'contract_no',
     };
     for (const [key, column] of Object.entries(fieldMap)) {
       if (payload[key] !== undefined) {
@@ -239,12 +258,35 @@ export const campaignRepo = {
   async setStatus(id, status, extra = {}) {
     const sets = ['status = ?'];
     const params = [status];
-    if (extra.publishedAt) {
-      sets.push('published_at = ?');
-      params.push(extra.publishedAt);
+    const stampFields = {
+      publishedAt: 'published_at',
+      submittedAt: 'submitted_at',
+      finishedAt: 'finished_at',
+      closedAt: 'closed_at',
+    };
+    for (const [key, column] of Object.entries(stampFields)) {
+      if (extra[key] !== undefined && extra[key] !== null && extra[key] !== false) {
+        sets.push(`${column} = ?`);
+        params.push(extra[key] === true ? new Date() : extra[key]);
+      }
     }
     params.push(id);
     await execute(`UPDATE campaign SET ${sets.join(', ')} WHERE id = ?`, params);
+  },
+
+  /**
+   * 统计周期内各计划的目标曝光，用于趋势接口按日摊分。
+   * 只取已进入投放或已结束的计划，与看板目标口径一致。
+   */
+  async listForTarget(filters, statuses) {
+    const { clause, params } = buildFilters(filters);
+    const marks = statuses.map(() => '?').join(',');
+    return query(
+      `SELECT id, target_impressions, start_date, end_date
+         FROM campaign c
+         ${clause} AND c.status IN (${marks})`,
+      [...params, ...statuses]
+    );
   },
 
   async setVendors(conn, campaignId, vendorIds) {

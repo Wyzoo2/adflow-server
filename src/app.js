@@ -39,6 +39,20 @@ export async function buildApp() {
   });
 
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+
+  // 允许 application/json + 空 body：按 {} 处理，避免前端不传 body 时被解析器拒绝
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+    const text = String(body || '').trim();
+    if (!text) return done(null, {});
+    try {
+      return done(null, JSON.parse(text));
+    } catch (err) {
+      err.statusCode = 400;
+      return done(err);
+    }
+  });
+
   // 直接在当前(根)上下文调用，确保 swagger 的 onRoute 钩子能收集到后面注册的全部路由
   await swaggerPlugin(app);
 

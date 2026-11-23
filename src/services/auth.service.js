@@ -41,6 +41,16 @@ export const authService = {
     };
   },
 
+  /** 令牌续期：基于当前登录用户重新签发，旧令牌到期前仍有效 */
+  refresh(user) {
+    const token = jwt.sign(
+      { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn }
+    );
+    return { token, tokenType: 'Bearer', expiresIn: config.jwtExpiresIn };
+  },
+
   verify(token) {
     try {
       const payload = jwt.verify(token, config.jwtSecret);

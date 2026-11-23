@@ -1,25 +1,35 @@
 // 项目数据访问。
-
 import { query, queryOne, execute } from '../db/pool.js';
 
-const mapProject = (row) => ({
-  id: String(row.id),
-  name: row.name,
-  client: row.client,
-  startDate: row.start_date,
-  endDate: row.end_date,
-  budget: row.budget,
-  createdAt: row.created_at,
-});
+const mapProject = (row) => {
+  const budget = Number(row.budget || 0);
+  const used = Number(row.used_budget || 0);
+  return {
+    id: String(row.id),
+    name: row.name,
+    client: row.client,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    budget: row.budget,
+    usedBudget: used.toFixed(2),
+    remainingBudget: Math.max(0, budget - used).toFixed(2),
+    createdAt: row.created_at,
+  };
+};
+
+const USED_BUDGET = `COALESCE((
+  SELECT SUM(c.budget) FROM campaign c
+   WHERE c.project_id = p.id AND c.deleted_at IS NULL
+), 0) AS used_budget`;
 
 export const projectRepo = {
   async list() {
-    const rows = await query('SELECT * FROM project ORDER BY id ASC');
+    const rows = await query(`SELECT p.*, ${USED_BUDGET} FROM project p ORDER BY p.id ASC`);
     return rows.map(mapProject);
   },
 
   async findById(id) {
-    const row = await queryOne('SELECT * FROM project WHERE id = ?', [id]);
+    const row = await queryOne(`SELECT p.*, ${USED_BUDGET} FROM project p WHERE p.id = ?`, [id]);
     return row ? mapProject(row) : null;
   },
 

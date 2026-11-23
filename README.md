@@ -90,6 +90,8 @@ npm start
 
 系统初始只创建这一个管理员账号；普通用户由管理员在「用户管理」中新增，登录后只能看到本人创建的计划与数据。
 
+投放渠道由管理员在「渠道管理」中维护，迁移已内置抖音、微信朋友圈、小红书、快手、百度、其他 6 个常用渠道，可改名、停用或删除。
+
 ## 新增表与结构变更
 
 `schema.sql` 是基线脚本，一旦在某个环境执行过，就不要再改它——迁移器按文件名记录执行状态，改了也不会重跑。后续新增表或改字段，按“一个变更一个文件”的方式：
@@ -132,9 +134,9 @@ npm run migrate
 - OpenAPI JSON：`http://<服务器IP>:3000/api-docs/json`
 - 健康检查：`http://<服务器IP>:3000/health`
 
-文档已按 11 个业务分类分组，包含请求参数与在线调试：
+文档已按 13 个业务分类分组，包含请求参数与在线调试：
 
-认证、用户管理、厂商管理、项目管理、投放计划、数据回收、模拟投放、数据看板、报表中心、系统日志、健康检查。
+认证、用户管理、厂商管理、渠道管理、项目管理、投放计划、数据回收、模拟投放、数据看板、报表中心、字典、系统日志、健康检查。
 
 建议使用顺序：先调 `POST /api/v1/auth/login` 登录，复制返回的 token，点击文档右上角 **Authorize** 填入后即可调试需要登录的接口。
 
@@ -160,10 +162,14 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 | --- | --- | --- |
 | 认证 | POST `/api/v1/auth/login` | 登录获取 JWT |
 | 认证 | GET `/api/v1/auth/profile` | 当前用户 |
+| 认证 | POST `/api/v1/auth/refresh` | 续期令牌 |
 | 用户 | GET/POST `/api/v1/users` | 用户列表、新增（管理员） |
 | 厂商 | GET `/api/v1/vendors` | 厂商分页列表 |
 | 厂商 | GET `/api/v1/vendors/active` | 启用厂商（发布向导用） |
 | 厂商 | POST/PUT/DELETE `/api/v1/vendors` | 厂商维护（管理员） |
+| 渠道 | GET/POST `/api/v1/channels` | 渠道列表、新增（管理员） |
+| 渠道 | GET `/api/v1/channels/active` | 启用渠道（发布向导用） |
+| 渠道 | PUT/DELETE `/api/v1/channels/{id}` | 修改、删除渠道（管理员） |
 | 计划 | GET/POST `/api/v1/campaigns` | 计划分页、创建草稿 |
 | 计划 | POST `/api/v1/campaigns/{id}/submit` | 提交审核 |
 | 计划 | POST `/api/v1/campaigns/{id}/approve` | 审核通过（管理员） |
@@ -171,8 +177,9 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 | 计划 | POST `/api/v1/campaigns/{id}/pause` | 暂停 / 恢复 / 结束 |
 | 计划 | PUT `/api/v1/campaigns/{id}/vendors` | 设置计划厂商（多选覆盖） |
 | 数据 | GET `/api/v1/campaigns/{id}/stats` | 分日数据与合计 |
-| 数据 | POST `/api/v1/campaigns/{id}/stats` | 手工录入 |
+| 数据 | POST `/api/v1/campaigns/{id}/stats` | 手工录入（可带人群维度） |
 | 数据 | PATCH `/api/v1/campaigns/{id}/stats/{date}` | 单日调节（管理员） |
+| 数据 | DELETE `/api/v1/campaigns/{id}/stats` | 清空计划数据（管理员） |
 | 数据 | POST `/api/v1/stats/import` | Excel 导入 |
 | 数据 | GET `/api/v1/stats/import/template` | 下载导入模板 |
 | 模拟 | GET/PUT `/api/v1/campaigns/{id}/mock-profile` | 模拟参数 |
@@ -180,8 +187,9 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 | 看板 | GET `/api/v1/dashboard/summary` | 汇总指标 |
 | 看板 | GET `/api/v1/dashboard/trend` | 按日趋势 |
 | 看板 | GET `/api/v1/dashboard/dimensions` | 地域/性别/年龄分布 |
-| 报表 | POST `/api/v1/reports` | 生成 Excel 报表 |
+| 报表 | POST `/api/v1/reports` | 日报/周报/结案/明细，xlsx 或 pdf |
 | 报表 | GET `/api/v1/reports/{id}/download` | 下载报表 |
+| 字典 | GET `/api/v1/dicts` | 渠道、年龄段、兴趣、指标口径 |
 | 日志 | GET `/api/v1/logs` | 审计日志（管理员） |
 
 完整清单以 `/api-docs` 为准。
@@ -215,7 +223,7 @@ npm run seed:force
 ## 验证
 
 ```bash
-# 服务启动后执行，覆盖登录、计划全流程、模拟生成、Excel 导入、报表、权限与跨域
+# 服务启动后执行，覆盖 R1-R15 补充需求、渠道/厂商管理、计划全流程、模拟生成、Excel 导入、四类报表、权限与跨域（63 项）
 npm run smoke
 ```
 

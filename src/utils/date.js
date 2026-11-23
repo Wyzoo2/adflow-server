@@ -34,3 +34,21 @@ export function today() {
 export function daysBetween(start, end) {
   return eachDay(start, end).length;
 }
+
+/** 日期加减天数，返回 YYYY-MM-DD */
+export function addDays(value, delta) {
+  const d = parseDate(value);
+  if (!d) return null;
+  d.setDate(d.getDate() + delta);
+  return formatDate(d);
+}
+
+/** 所在周的周一（用于周报聚合） */
+export function weekStart(value) {
+  const d = parseDate(value);
+  if (!d) return null;
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return formatDate(d);
+}

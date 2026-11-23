@@ -84,27 +84,25 @@ export function generateSeries({ campaign, profile, from, to }) {
 
   const ratio = profile?.dimRatio || DEFAULT_DIM_RATIO;
   const dims = [];
-  for (const [dimType, mapping] of Object.entries(ratio)) {
-    const values = Object.keys(mapping);
-    const weights = Object.values(mapping).map(Number);
-    const impSplit = splitExact(total, weights);
-    const reachSplit = splitExact(
-      daily.reduce((a, b) => a + b.reach, 0),
-      weights
-    );
-    const clickSplit = splitExact(
-      daily.reduce((a, b) => a + b.clicks, 0),
-      weights
-    );
-    values.forEach((value, i) => {
-      dims.push({
-        dimType,
-        dimValue: value,
-        impressions: impSplit[i],
-        reach: reachSplit[i],
-        clicks: clickSplit[i],
+  // 维度按日拆分，保证每个日期三组维度合计都等于当日曝光
+  for (const day of daily) {
+    for (const [dimType, mapping] of Object.entries(ratio)) {
+      const values = Object.keys(mapping);
+      const weights = Object.values(mapping).map(Number);
+      const impSplit = splitExact(day.impressions, weights);
+      const reachSplit = splitExact(day.reach, weights);
+      const clickSplit = splitExact(day.clicks, weights);
+      values.forEach((value, i) => {
+        dims.push({
+          statDate: day.statDate,
+          dimType,
+          dimValue: value,
+          impressions: impSplit[i],
+          reach: reachSplit[i],
+          clicks: clickSplit[i],
+        });
       });
-    });
+    }
   }
 
   return {

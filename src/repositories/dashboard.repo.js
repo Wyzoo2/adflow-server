@@ -24,15 +24,15 @@ function campaignFilter({ projectId, createdBy, from, to }) {
   return { clause: `WHERE ${where.join(' AND ')}`, params };
 }
 
-function statDateFilter({ from, to }) {
+function statDateFilter({ from, to }, alias = 'd') {
   const where = [];
   const params = [];
   if (from) {
-    where.push('d.stat_date >= ?');
+    where.push(`${alias}.stat_date >= ?`);
     params.push(from);
   }
   if (to) {
-    where.push('d.stat_date <= ?');
+    where.push(`${alias}.stat_date <= ?`);
     params.push(to);
   }
   return { clause: where.length ? `AND ${where.join(' AND ')}` : '', params };
@@ -95,16 +95,23 @@ export const dashboardRepo = {
 
   async dimensions(filter) {
     const cf = campaignFilter(filter);
+    const sf = statDateFilter(filter, 'ds');
+    const extra = [];
+    const extraParams = [];
+    if (filter.type) {
+      extra.push('ds.dim_type = ?');
+      extraParams.push(filter.type);
+    }
     const rows = await query(
       `SELECT ds.dim_type, ds.dim_value,
               SUM(ds.impressions) AS impressions,
               SUM(ds.reach) AS reach,
               SUM(ds.clicks) AS clicks
          FROM dim_stat ds JOIN campaign c ON c.id = ds.campaign_id
-         ${cf.clause}
+         ${cf.clause} ${sf.clause} ${extra.length ? `AND ${extra.join(' AND ')}` : ''}
         GROUP BY ds.dim_type, ds.dim_value
         ORDER BY ds.dim_type, CAST(SUM(ds.impressions) AS UNSIGNED) DESC`,
-      cf.params
+      [...cf.params, ...sf.params, ...extraParams]
     );
     return rows.map((r) => ({
       dimType: r.dim_type,

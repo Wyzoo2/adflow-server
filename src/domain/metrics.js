@@ -7,8 +7,10 @@ export function toNum(value) {
 
 export function completionRate(actual, target) {
   const t = toNum(target);
-  if (!t) return null;
-  return Number((toNum(actual) / t).toFixed(4));
+  const a = toNum(actual);
+  // 无数据（实际为 0）或目标为 0 时返回 null，前端显示「—」
+  if (!t || !a) return null;
+  return Number((a / t).toFixed(4));
 }
 
 export function clickRate(clicks, reach) {

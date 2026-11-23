@@ -1,5 +1,4 @@
 // Excel 导入与模板下载路由。
-
 import { ok } from '../utils/response.js';
 import { statsService } from '../services/stats.service.js';
 import { errors } from '../utils/errors.js';
@@ -9,7 +8,6 @@ export default async function importRoutes(app) {
   app.post(
     '/import',
     {
-      // multipart 请求体由 @fastify/multipart 处理，这里补空对象以通过 JSON Schema 校验
       preValidation: async (request) => {
         request.body = {};
       },
@@ -17,12 +15,14 @@ export default async function importRoutes(app) {
         tags: ['数据回收'],
         summary: 'Excel 批量导入分日数据',
         description:
-          '上传 xlsx 文件，必填列：计划编号、日期、曝光量、曝光人数、点击人数，消耗可选。存在错误行时整体不写入并返回错误明细。',
+          '上传 xlsx（≤10MB，≤10000 行），必填列：计划编号、日期、曝光量、曝光人数、点击人数；消耗可选。任意行校验失败则整体不写入并返回错误行。',
         security,
         consumes: ['multipart/form-data'],
         body: {
           type: 'object',
-          properties: { file: { type: 'string', format: 'binary' } },
+          properties: {
+            file: { type: 'string', format: 'binary', description: 'xlsx 文件' },
+          },
         },
       },
     },
@@ -41,6 +41,7 @@ export default async function importRoutes(app) {
       schema: {
         tags: ['数据回收'],
         summary: '下载导入模板',
+        description: '返回带表头与示例行的 xlsx 模板，表头需保持中文原名。',
         security,
         produces: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
       },
