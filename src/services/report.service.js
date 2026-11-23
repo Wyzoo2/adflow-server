@@ -1,9 +1,8 @@
-// 报表业务：生成 xlsx / pdf 并登记任务。
+// 报表业务：生成 xlsx 并登记任务。
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
-import PDFDocument from 'pdfkit';
 import { config } from '../config/index.js';
 import { pool } from '../db/pool.js';
 import { reportRepo } from '../repositories/report.repo.js';
@@ -15,7 +14,7 @@ import { weekStart } from '../utils/date.js';
 const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF17416B' } };
 const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' } };
 const TYPES = ['daily', 'weekly', 'campaign', 'detail'];
-const FORMATS = ['xlsx', 'pdf'];
+const FORMATS = ['xlsx'];
 
 function safeFileName(name) {
   return name.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 80);
@@ -52,75 +51,6 @@ async function writeXlsx(filePath, report) {
   workbook.creator = 'adflow-server';
   for (const section of report.sections) addSection(workbook, section);
   await workbook.xlsx.writeFile(filePath);
-}
-
-function drawTable(doc, headers, rows, widths) {
-  const left = doc.page.margins.left;
-  const available = doc.page.width - left - doc.page.margins.right;
-  const total = widths.reduce((a, b) => a + b, 0);
-  const cols = widths.map((w) => (w / total) * available);
-  const rowHeight = 18;
-
-  const drawRow = (cells, isHeader) => {
-    let x = left;
-    const y = doc.y;
-    if (isHeader) {
-      doc.rect(left, y, available, rowHeight).fill('#17416B');
-    }
-    cells.forEach((cell, i) => {
-      doc
-        .fillColor(isHeader ? '#FFFFFF' : '#1F2329')
-        .fontSize(isHeader ? 8.5 : 8)
-        .text(String(cell ?? ''), x + 3, y + 4, {
-          width: cols[i] - 6,
-          height: rowHeight - 6,
-          ellipsis: true,
-          lineBreak: false,
-        });
-      x += cols[i];
-    });
-    doc.y = y + rowHeight;
-  };
-
-  drawRow(headers, true);
-  for (const row of rows) {
-    if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom - 20) {
-      doc.addPage();
-      drawRow(headers, true);
-    }
-    drawRow(row, false);
-  }
-}
-
-async function writePdf(filePath, report) {
-  if (!fs.existsSync(config.pdfFontPath)) {
-    throw errors.badRequest(`缺少中文字体文件：${config.pdfFontPath}，请通过 PDF_FONT_PATH 指定`);
-  }
-  const doc = new PDFDocument({ size: 'A4', margin: 40 });
-  const stream = fs.createWriteStream(filePath);
-  doc.pipe(stream);
-  doc.registerFont('cn', config.pdfFontPath);
-
-  doc.font('cn').fontSize(16).fillColor('#17416B').text(report.title);
-  doc.moveDown(0.3);
-  doc.fontSize(8.5).fillColor('#5B6673').text(`生成时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`);
-  if (report.meta) doc.text(report.meta);
-  doc.moveDown(0.8);
-
-  for (const section of report.sections) {
-    if (doc.y > doc.page.height - doc.page.margins.bottom - 120) doc.addPage();
-    doc.font('cn').fontSize(11).fillColor('#17416B').text(section.name);
-    doc.moveDown(0.3);
-    doc.fillColor('#1F2329');
-    drawTable(doc, section.headers, section.rows, section.widths || section.headers.map(() => 1));
-    doc.moveDown(0.8);
-  }
-
-  doc.end();
-  await new Promise((resolve, reject) => {
-    stream.on('finish', resolve);
-    stream.on('error', reject);
-  });
 }
 
 function buildWhere(payload, user) {
@@ -342,7 +272,7 @@ export const reportService = {
     const type = payload.type || 'campaign';
     const format = payload.format || 'xlsx';
     if (!TYPES.includes(type)) throw errors.badRequest('报表类型不合法');
-    if (!FORMATS.includes(format)) throw errors.badRequest('报表格式仅支持 xlsx 或 pdf');
+    if (!FORMATS.includes(format)) throw errors.badRequest('报表格式仅支持 xlsx');
     if (type === 'campaign' && !payload.campaignId) throw errors.badRequest('结案报告需要传 campaignId');
     if ((type === 'daily' || type === 'weekly' || type === 'detail') && (!payload.from || !payload.to)) {
       throw errors.badRequest('该报表类型需要传 from 与 to');
@@ -368,8 +298,7 @@ export const reportService = {
       const report = await buildReport({ ...payload, type, format }, user);
       await fs.promises.mkdir(config.reportDir, { recursive: true });
       const filePath = path.join(config.reportDir, `${id}.${format}`);
-      if (format === 'pdf') await writePdf(filePath, report);
-      else await writeXlsx(filePath, report);
+      await writeXlsx(filePath, report);
       const stat = await fs.promises.stat(filePath);
       await reportRepo.markDone(id, {
         fileName: report.fileName,

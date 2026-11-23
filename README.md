@@ -187,7 +187,7 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 | 看板 | GET `/api/v1/dashboard/summary` | 汇总指标 |
 | 看板 | GET `/api/v1/dashboard/trend` | 按日趋势 |
 | 看板 | GET `/api/v1/dashboard/dimensions` | 地域/性别/年龄分布 |
-| 报表 | POST `/api/v1/reports` | 日报/周报/结案/明细，xlsx 或 pdf |
+| 报表 | POST `/api/v1/reports` | 日报/周报/结案/明细，导出 xlsx |
 | 报表 | GET `/api/v1/reports/{id}/download` | 下载报表 |
 | 字典 | GET `/api/v1/dicts` | 渠道、年龄段、兴趣、指标口径 |
 | 日志 | GET `/api/v1/logs` | 审计日志（管理员） |
