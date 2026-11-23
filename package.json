@@ -1,0 +1,33 @@
+{
+  "name": "adflow-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "投流统计平台后端服务 - Node.js + MySQL",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "setup": "node scripts/migrate.js && node scripts/seed.js",
+    "migrate": "node scripts/migrate.js",
+    "migrate:new": "node scripts/new-migration.js",
+    "seed": "node scripts/seed.js",
+    "seed:force": "node scripts/seed.js --force",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.4.3",
+    "@fastify/multipart": "^9.3.0",
+    "@fastify/swagger": "^9.9.5",
+    "@fastify/swagger-ui": "^6.1.5",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.12.8",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.24.6"
+  }
+}
