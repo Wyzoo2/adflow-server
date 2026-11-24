@@ -31,6 +31,16 @@ export function today() {
   return formatDate(new Date());
 }
 
+/** 固定按北京时间取日期，避免服务器时区为 UTC 时把日期算错 */
+export function todayShanghai() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 export function daysBetween(start, end) {
   return eachDay(start, end).length;
 }

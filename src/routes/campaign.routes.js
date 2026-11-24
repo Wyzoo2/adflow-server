@@ -58,7 +58,7 @@ const updateBody = {
 const transitions = [
   ['submit', '提交审核', '草稿提交后进入待审核状态，创建人或管理员可操作。', null],
   ['withdraw', '撤回申请', '待审核状态下撤回，回到草稿。', null],
-  ['approve', '审核通过', '仅管理员，通过后进入已排期。', requireAdmin],
+  ['approve', '审核通过', '仅管理员；通过后进入已排期，重复审核幂等。', requireAdmin],
   ['reject', '审核驳回', '仅管理员，驳回后回到草稿并记录意见。', requireAdmin],
   ['pause', '暂停投放', '投放中暂停，创建人或管理员可操作。', null],
   ['resume', '恢复投放', '已暂停恢复为投放中。', null],
@@ -156,8 +156,9 @@ export default async function campaignRoutes(app) {
       preHandler: requireAdmin,
       schema: {
         tags: ['投放计划'],
-        summary: '发布并生成投放单号',
-        description: '仅管理员；行锁保证并发安全，单号格式 DCYYYYMMDD-XXXX。',
+        summary: '发布计划（按排期）',
+        description:
+          '仅管理员。开始日期未到时保持已排期且不生成单号；开始日期已到或为今天时生成单号并转为投放中；已投放中重复发布幂等返回原单号。',
         security,
         params: idParams,
         body: {

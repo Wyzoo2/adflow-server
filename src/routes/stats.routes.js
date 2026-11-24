@@ -155,7 +155,7 @@ export default async function statsRoutes(app) {
         tags: ['数据回收'],
         summary: '触发数据同步（管理员）',
         description:
-          '按当前时间补齐应产生的投放数据，不做额外增量；重复调用不会加速增长，数据仍按排期自然推进。',
+          '按当前时间补齐应产生的投放数据，不做额外增量；已排期未发布的计划返回「计划尚未开始」。',
         security,
         params: idParams,
       },

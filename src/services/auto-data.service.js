@@ -176,6 +176,10 @@ export const autoDataService = {
     const today = formatDate(new Date());
     const startDate = formatDate(new Date(campaign.startDate));
     const endDate = formatDate(new Date(campaign.endDate));
+    // 已排期计划还没发布，不能同步出数据
+    if (!['running', 'paused', 'finished', 'closed'].includes(campaign.status)) {
+      return { campaignId: id, updatedDays: 0, totalImpressions: 0, message: '计划尚未开始' };
+    }
     if (today < startDate) {
       return { campaignId: id, updatedDays: 0, totalImpressions: 0, message: '计划尚未开始' };
     }

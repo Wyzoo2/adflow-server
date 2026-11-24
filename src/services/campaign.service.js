@@ -10,6 +10,7 @@ import { nextStatus, assertEditable } from '../domain/campaign-status.js';
 import { buildCampaignCode } from '../domain/code.js';
 import { completionRate, clickRate } from '../domain/metrics.js';
 import { channelName } from '../domain/dicts.js';
+import { formatDate, todayShanghai } from '../utils/date.js';
 import { errors } from '../utils/errors.js';
 
 const ADMIN_ONLY_EVENTS = new Set(['approve', 'reject', 'publish', 'close']);
@@ -203,6 +204,10 @@ export const campaignService = {
       throw errors.forbidden('该操作仅管理员可执行');
     }
     const campaign = await mustGet(id, user);
+    // 审核幂等：已排期的计划重复审核直接返回当前状态
+    if (event === 'approve' && campaign.status === 'scheduled') {
+      return this.detail(id, user);
+    }
     const target = nextStatus(campaign.status, event);
     const stamps = {};
     if (event === 'submit') stamps.submittedAt = true;
@@ -222,33 +227,59 @@ export const campaignService = {
   },
 
   /**
-   * 发布：事务内对计划行加排他锁，生成唯一投放单号并写审计。
-   * 仅管理员可执行，未定义的迁移会被状态机拒绝。
+   * 发布：按开始日期决定是否真正投放。
+   * - 开始日期未到：保持 scheduled，不生成单号；
+   * - 开始日期已到/今天：生成单号并转 running；
+   * - 已 running：幂等返回现有单号；
+   * - 历史 pending：先自动补审核，再按日期规则处理。
    */
   async publish(id, user, ip, extra = {}) {
     if (user.role !== 'admin') throw errors.forbidden('发布操作仅管理员可执行');
     const result = await withTransaction(async (conn) => {
       const campaign = await campaignRepo.lockById(conn, id);
       if (!campaign) throw errors.notFound('投放计划不存在');
-      const target = nextStatus(campaign.status, 'publish');
+
+      if (campaign.status === 'running') {
+        return { code: campaign.code, status: 'running', idempotent: true };
+      }
+
+      const beforeStatus = campaign.status;
+      let status = campaign.status;
+      if (status === 'pending') {
+        await conn.query(
+          "UPDATE campaign SET status = 'scheduled', submitted_at = COALESCE(submitted_at, NOW()) WHERE id = ?",
+          [id]
+        );
+        status = 'scheduled';
+      }
+      if (status !== 'scheduled') {
+        throw errors.conflict('只有已排期或待审核的计划可以发布');
+      }
+
+      const startDate = formatDate(new Date(campaign.startDate));
+      const today = todayShanghai();
+      if (startDate > today) {
+        return { code: null, status: 'scheduled', deferred: true };
+      }
+
       const code = campaign.code || buildCampaignCode(campaign.id, new Date());
       await conn.query(
-        `UPDATE campaign SET code = ?, status = ?, published_at = NOW() WHERE id = ?`,
-        [code, target, id]
+        `UPDATE campaign SET code = ?, status = 'running', published_at = NOW() WHERE id = ?`,
+        [code, id]
       );
       await auditRepo.insert(
         {
           objectType: 'campaign',
           objectId: id,
           action: 'publish',
-          before: { status: campaign.status },
-          after: { status: target, code, mode: extra.publishMode || 'schedule' },
+          before: { status: beforeStatus },
+          after: { status: 'running', code, mode: extra.publishMode || 'schedule' },
           operatorId: user.id,
           ip,
         },
         conn
       );
-      return { code, status: target };
+      return { code, status: 'running' };
     });
     return { ...result, campaign: await this.detail(id, user) };
   },

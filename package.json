@@ -17,6 +17,7 @@
     "seed": "node scripts/seed.js",
     "seed:force": "node scripts/seed.js --force",
     "auto:tick": "node scripts/auto-tick.js",
+    "auto:publish": "node scripts/auto-publish.js",
     "smoke": "node scripts/smoke.js"
   },
   "dependencies": {

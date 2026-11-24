@@ -5,6 +5,7 @@ import { buildApp } from './app.js';
 import { config } from './config/index.js';
 import { closePool } from './db/pool.js';
 import { startAutoData } from './plugins/auto-data.js';
+import { startAutoPublish } from './plugins/auto-publish.js';
 
 function lanAddresses() {
   const out = [];
@@ -45,6 +46,7 @@ const lines = [
 ];
 console.log(lines.join('\n'));
 startAutoData(app);
+startAutoPublish(app);
 
 async function shutdown(signal) {
   app.log.info(`收到 ${signal}，正在关闭服务`);

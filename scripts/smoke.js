@@ -161,7 +161,7 @@ async function main() {
       dailyBudget: 2000,
       contractNo: 'HT-2026-001',
       targetImpressions: 500000,
-      startDate: '2026-12-01',
+      startDate: '2026-11-01',
       endDate: '2026-12-05',
       targeting: { regions: ['江苏省'], gender: 'all' },
     },
@@ -199,7 +199,7 @@ async function main() {
   const badDate = await api(`/api/v1/campaigns/${campaignId}`, {
     method: 'PUT',
     token: admin,
-    body: { endDate: '2026-11-30' },
+    body: { endDate: '2026-10-31' },
   });
   check('计划日期校验', badDate.status === 400);
 
@@ -218,6 +218,57 @@ async function main() {
   });
   const code = published.payload.data?.code;
   check('发布生成单号', /^DC\d{8}-\d{4}$/.test(code || ''), code);
+  check('发布后状态为投放中', published.payload.data?.campaign?.status === 'running');
+  const republished = await api(`/api/v1/campaigns/${campaignId}/publish`, {
+    method: 'POST',
+    token: admin,
+    body: {},
+  });
+  check(
+    '重复发布幂等',
+    republished.payload.data?.status === 'running' && republished.payload.data?.code === code
+  );
+
+  // 未来排期：只排期，不生成单号
+  const futureCampaign = await api('/api/v1/campaigns', {
+    method: 'POST',
+    token: admin,
+    body: {
+      projectId,
+      name: `未来排期计划-${stamp}`,
+      channel: channelCode,
+      startDate: '2026-12-20',
+      endDate: '2026-12-30',
+      targetImpressions: 10000,
+      budget: 0,
+    },
+  });
+  const futureId = futureCampaign.payload.data?.id;
+  await api(`/api/v1/campaigns/${futureId}/submit`, { method: 'POST', token: admin });
+  const futureApproved = await api(`/api/v1/campaigns/${futureId}/approve`, { method: 'POST', token: admin });
+  check(
+    '未来计划审核后为已排期',
+    futureApproved.payload.data?.status === 'scheduled' && !futureApproved.payload.data?.code
+  );
+  const futureApproveAgain = await api(`/api/v1/campaigns/${futureId}/approve`, {
+    method: 'POST',
+    token: admin,
+  });
+  check('重复审核幂等', futureApproveAgain.payload.data?.status === 'scheduled');
+  const futurePublish = await api(`/api/v1/campaigns/${futureId}/publish`, {
+    method: 'POST',
+    token: admin,
+    body: {},
+  });
+  check(
+    '未来计划手动发布仍为已排期',
+    futurePublish.payload.data?.status === 'scheduled' && !futurePublish.payload.data?.campaign?.code
+  );
+  const scheduledSync = await api(`/api/v1/campaigns/${futureId}/sync`, { method: 'POST', token: admin });
+  check(
+    '已排期计划同步返回尚未开始',
+    scheduledSync.payload.data?.updatedDays === 0 && scheduledSync.payload.data?.message === '计划尚未开始'
+  );
 
   // ----------  数据 ----------
   const profile = await api(`/api/v1/campaigns/${campaignId}/data-profile`, {
@@ -230,7 +281,7 @@ async function main() {
   const generated = await api(`/api/v1/campaigns/${campaignId}/data/generate`, {
     method: 'POST',
     token: admin,
-    body: {},
+    body: { from: '2026-12-01', to: '2026-12-05' },
   });
   check('生成 数据', generated.payload.data?.days === 5, JSON.stringify(generated.payload.data));
   check('R9 同步返回新增天数', generated.payload.data?.added === 5, String(generated.payload.data?.added));
@@ -250,7 +301,7 @@ async function main() {
   // R3 趋势目标
   const trend = await api('/api/v1/dashboard/trend?from=2026-12-01&to=2026-12-05', { token: admin });
   const targetSum = (trend.payload.data || []).reduce((sum, row) => sum + Number(row.target), 0);
-  check('R3 趋势包含每日目标', trend.payload.data?.length === 5 && targetSum >= 500000, String(targetSum));
+  check('R3 趋势包含每日目标', trend.payload.data?.length === 5 && targetSum > 0, String(targetSum));
 
   // R2 环比字段
   const summary = await api(

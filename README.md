@@ -70,7 +70,8 @@ npm start
 | `npm run migrate` | 建库建表，按 `schema_migrations` 记录跳过已执行脚本 | 首次部署、结构升级 |
 | `npm run seed` | 只创建管理员账号，不写入项目、厂商、计划等业务数据；已存在时跳过 | 首次部署 |
 | `npm run auto:tick` | 手动执行一次投放数据自动更新，用于联调或验证 | 按需 |
-| `npm start` | 启动 HTTP 服务，监听 0.0.0.0，同时开启自动更新定时器 | 每次启动 |
+| `npm run auto:publish` | 手动执行一次排期自动发布检查 | 按需 |
+| `npm start` | 启动 HTTP 服务，监听 0.0.0.0，同时开启自动更新与自动发布定时器 | 每次启动 |
 
 拆分的原因：建表与初始化属于部署动作，只应执行一次；启动服务是日常动作。三者分开后，生产环境启动时不会误写测试数据，结构变更也能单独控制。`migrate` 本身幂等，重复执行只会跳过；`seed` 检测到管理员已存在会直接退出，需要重置时用 `npm run seed:force`（清空业务数据并恢复默认管理员密码）。
 
@@ -179,7 +180,7 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 | 计划 | GET/POST `/api/v1/campaigns` | 计划分页、创建草稿 |
 | 计划 | POST `/api/v1/campaigns/{id}/submit` | 提交审核 |
 | 计划 | POST `/api/v1/campaigns/{id}/approve` | 审核通过（管理员） |
-| 计划 | POST `/api/v1/campaigns/{id}/publish` | 发布并生成投放单号（管理员） |
+| 计划 | POST `/api/v1/campaigns/{id}/publish` | 按排期发布：未来保持已排期，到点生成单号（管理员） |
 | 计划 | POST `/api/v1/campaigns/{id}/pause` | 暂停 / 恢复 / 结束 |
 | 计划 | PUT `/api/v1/campaigns/{id}/vendors` | 设置计划厂商（多选覆盖） |
 | 数据 | GET `/api/v1/campaigns/{id}/stats` | 分日数据与合计 |
@@ -202,7 +203,7 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 
 ## 关键设计
 
-- **状态机**：`draft → pending → scheduled → running → paused → finished → closed`，未定义迁移直接返回 409。
+- **状态机**：`draft → pending → scheduled → running → paused → finished → closed`，未定义迁移直接返回 409；开始日期未到的计划停在 `scheduled`，到开始日期由后台自动发布。
 - **投放单号**：发布时生成 `DCYYYYMMDD-XXXX`，唯一索引兜底，前端可直接用于对账。
 - **幂等入库**：分日数据以 `(campaign_id, stat_date)` 为主键，`INSERT ... AS new ON DUPLICATE KEY UPDATE` 覆盖写入，重复导入不累加。
 - **投放数据**：按目标曝光、曲线、点击率、千人成本、频次、人群比例与随机种子生成；默认前重后轻（前几天份额更大），固定种子结果可复现，人群维度用最大余数法保证合计精确。
@@ -237,6 +238,32 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 npm run auto:tick
 ```
 
+## 排期自动发布
+
+创建计划时如果开始日期还没到，审核通过后停在 `scheduled`，不生成投放单号；后台定时任务默认每 60 秒检查一次，到达开始日期后自动：
+
+- 生成 `DCYYYYMMDD-XXXX` 投放单号；
+- 状态改为 `running`；
+- 写入发布时间；
+- 写审计日志 `auto_publish`，操作人显示为「系统」。
+
+发布接口同样遵守这个规则：未来计划手动发布仍保持 `scheduled`，不生成单号；开始日期已到或就是今天才真正进入投放。已投放中的计划重复发布不会重复生成单号。
+
+排期已经整体结束、但仍停留在 `scheduled` 的历史计划，会被自动标记为 `finished` 并记录 `auto_finish_expired`。
+
+相关配置：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `AUTO_PUBLISH_ENABLED` | `true` | 是否开启排期自动发布 |
+| `AUTO_PUBLISH_INTERVAL_MS` | `60000` | 检查间隔，毫秒 |
+
+手动执行一次：
+
+```bash
+npm run auto:publish
+```
+
 ## 初始化数据
 
 `npm run seed` 只做一件事：创建管理员账号 `root / root`，不写入任何项目、厂商、计划与投放数据。
@@ -257,7 +284,7 @@ npm run seed:force
 ## 验证
 
 ```bash
-# 服务启动后执行，覆盖 R1-R15 补充需求、渠道/厂商管理、注册与账号资料、计划全流程、数据生成、Excel 导入、四类报表、权限与跨域（91 项）
+# 服务启动后执行，覆盖 R1-R15 补充需求、渠道/厂商管理、注册与账号资料、计划全流程、排期自动发布、数据生成、Excel 导入、四类报表、权限与跨域（97 项）
 npm run smoke
 ```
 

@@ -23,6 +23,9 @@ export const config = {
   // 投放数据自动变化：默认开启，按固定间隔滚动更新投放中的计划
   autoDataEnabled: (process.env.AUTO_DATA_ENABLED || 'true') !== 'false',
   autoTickIntervalMs: num(process.env.AUTO_TICK_INTERVAL_MS, 60000),
+  // 排期自动发布：scheduled 计划到开始日期后自动转 running
+  autoPublishEnabled: (process.env.AUTO_PUBLISH_ENABLED || 'true') !== 'false',
+  autoPublishIntervalMs: num(process.env.AUTO_PUBLISH_INTERVAL_MS, 60000),
   // PDF 报表使用的中文字体；Windows 默认用黑体，Linux 部署时通过环境变量指定
   pdfFontPath: process.env.PDF_FONT_PATH || 'C:\\Windows\\Fonts\\simhei.ttf',
   db: {

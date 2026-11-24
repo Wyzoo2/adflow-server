@@ -56,6 +56,7 @@ export const auditRepo = {
       [...params, limit, offset]
     );
     const totalRow = await queryOne(`SELECT COUNT(*) AS total FROM audit_log a ${clause}`, params);
+    const systemActions = new Set(['auto_publish', 'auto_finish_expired']);
     return {
       items: rows.map((r) => ({
         id: String(r.id),
@@ -64,8 +65,8 @@ export const auditRepo = {
         action: r.action,
         before: r.before_data,
         after: r.after_data,
-        operatorId: String(r.operator_id),
-        operatorName: r.operator_name,
+        operatorId: r.operator_id == null ? null : String(r.operator_id),
+        operatorName: systemActions.has(r.action) ? '系统' : r.operator_name,
         ip: r.ip,
         createdAt: r.created_at,
       })),
