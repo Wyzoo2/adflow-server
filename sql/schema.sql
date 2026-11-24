@@ -16,7 +16,7 @@
 --   creative        投放素材
 --   daily_stat      分日指标
 --   dim_stat        人群维度指标（按日）
---   mock_profile    模拟投放参数
+--   mock_profile    数据生成参数
 --   audit_log       审计日志
 --   sync_task       数据同步任务
 --   report_task     报表导出任务
@@ -32,6 +32,7 @@ CREATE TABLE `sys_user` (
   `display_name` varchar(64) NOT NULL,
   `role` varchar(16) NOT NULL DEFAULT 'user' COMMENT 'admin 管理员 / user 普通用户',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '1 启用 0 停用',
+  `token_version` int NOT NULL DEFAULT '0' COMMENT '令牌版本号，改密或停用后递增',
   `last_login_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -165,7 +166,7 @@ CREATE TABLE `daily_stat` (
   `reach` bigint unsigned NOT NULL DEFAULT '0',
   `clicks` bigint unsigned NOT NULL DEFAULT '0',
   `cost` decimal(12,2) NOT NULL DEFAULT '0.00',
-  `source` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual/excel/api/mock',
+  `source` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual/excel/api',
   `updated_by` bigint unsigned DEFAULT NULL,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`campaign_id`,`stat_date`),
@@ -189,7 +190,7 @@ CREATE TABLE `dim_stat` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='人群维度指标';
 
 -- ----------------------------------------------------------------------------
--- mock_profile  模拟参数：目标曝光、曲线、点击率、CPM、频次、种子
+-- mock_profile  数据生成参数：目标曝光、曲线、点击率、CPM、频次、种子
 -- ----------------------------------------------------------------------------
 CREATE TABLE `mock_profile` (
   `campaign_id` bigint unsigned NOT NULL,
@@ -203,7 +204,7 @@ CREATE TABLE `mock_profile` (
   `updated_by` bigint unsigned DEFAULT NULL,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`campaign_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模拟参数';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='数据参数';
 
 -- ----------------------------------------------------------------------------
 -- audit_log  审计日志：前后值、操作人、IP，只追加不修改

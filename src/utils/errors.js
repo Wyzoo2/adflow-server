@@ -39,6 +39,6 @@ export const errors = {
   vendorDisabled: (msg = '存在停用或无效的厂商') => new AppError(2005, msg),
   importFormat: (msg = '导入文件格式错误', details) => new AppError(3001, msg, details),
   importInvalid: (msg = '导入数据校验失败', details) => new AppError(3002, msg, details),
-  mockParam: (msg = '模拟参数超出合理范围') => new AppError(3003, msg),
+  mockParam: (msg = '数据参数超出合理范围') => new AppError(3003, msg),
   mediaFailed: (msg = '媒体接口调用失败') => new AppError(4001, msg),
 };

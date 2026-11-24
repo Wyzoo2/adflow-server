@@ -10,6 +10,7 @@ const mapUser = (row) =>
         displayName: row.display_name,
         role: row.role,
         status: Number(row.status),
+        tokenVersion: Number(row.token_version || 0),
         lastLoginAt: row.last_login_at,
         createdAt: row.created_at,
       }
@@ -23,11 +24,16 @@ export const userRepo = {
   async findById(id) {
     return mapUser(
       await queryOne(
-        `SELECT id, username, display_name, role, status, last_login_at, created_at
+        `SELECT id, username, display_name, role, status, token_version, last_login_at, created_at
            FROM sys_user WHERE id = ?`,
         [id]
       )
     );
+  },
+
+  /** 修改密码时使用，包含 password_hash */
+  async findWithPasswordById(id) {
+    return queryOne('SELECT * FROM sys_user WHERE id = ?', [id]);
   },
 
   async list({ keyword, role, status, offset, limit }) {
@@ -47,7 +53,7 @@ export const userRepo = {
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const rows = await query(
-      `SELECT id, username, display_name, role, status, last_login_at, created_at
+      `SELECT id, username, display_name, role, status, token_version, last_login_at, created_at
          FROM sys_user ${clause}
         ORDER BY id ASC
         LIMIT ? OFFSET ?`,
@@ -55,6 +61,14 @@ export const userRepo = {
     );
     const totalRow = await queryOne(`SELECT COUNT(*) AS total FROM sys_user ${clause}`, params);
     return { items: rows.map(mapUser), total: Number(totalRow.total) };
+  },
+
+  /** 统计启用中的管理员数量，避免把最后一个管理员停用或降级 */
+  async countActiveAdmins() {
+    const row = await queryOne(
+      "SELECT COUNT(*) AS total FROM sys_user WHERE role = 'admin' AND status = 1"
+    );
+    return Number(row.total);
   },
 
   async create({ username, passwordHash, displayName, role, status = 1 }) {
@@ -84,6 +98,11 @@ export const userRepo = {
     if (!sets.length) return;
     params.push(id);
     await execute(`UPDATE sys_user SET ${sets.join(', ')} WHERE id = ?`, params);
+  },
+
+  /** 使该账号已签发的令牌全部失效（改密码、重置密码、停用时调用） */
+  async bumpTokenVersion(id) {
+    await execute('UPDATE sys_user SET token_version = token_version + 1 WHERE id = ?', [id]);
   },
 
   async updatePassword(id, passwordHash) {

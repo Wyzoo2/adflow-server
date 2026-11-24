@@ -64,6 +64,62 @@ async function main() {
   }
   const admin = adminLogin.payload.data.token;
 
+  // ---------- 注册 / 昵称 / 密码 ----------
+  const regName = `smoke_reg${stamp}`;
+  const registered = await api('/api/v1/auth/register', {
+    method: 'POST',
+    body: { username: regName, password: 'pass123', displayName: '注册用户' },
+  });
+  check(
+    '注册接口',
+    registered.status === 200 && Boolean(registered.payload.data?.token) && registered.payload.data?.user?.role === 'user'
+  );
+  const regToken = registered.payload.data?.token;
+  const regDup = await api('/api/v1/auth/register', {
+    method: 'POST',
+    body: { username: regName, password: 'pass123' },
+  });
+  check('注册用户名唯一', regDup.status === 409);
+
+  const profileUpdated = await api('/api/v1/auth/profile', {
+    method: 'PATCH',
+    token: regToken,
+    body: { displayName: `昵称-${stamp}` },
+  });
+  check(
+    '修改昵称',
+    profileUpdated.status === 200 &&
+      profileUpdated.payload.data?.user?.displayName === `昵称-${stamp}` &&
+      Boolean(profileUpdated.payload.data?.token)
+  );
+
+  const badOld = await api('/api/v1/auth/password', {
+    method: 'PUT',
+    token: regToken,
+    body: { oldPassword: 'wrong-pass', newPassword: 'pass456' },
+  });
+  check('修改密码校验原密码', badOld.status === 400);
+
+  const changed = await api('/api/v1/auth/password', {
+    method: 'PUT',
+    token: regToken,
+    body: { oldPassword: 'pass123', newPassword: 'pass456' },
+  });
+  check('修改密码', changed.status === 200 && changed.payload.data?.success === true);
+  const staleToken = await api('/api/v1/auth/profile', { token: regToken });
+  check('改密后旧令牌失效', staleToken.status === 401);
+
+  const oldLogin = await api('/api/v1/auth/login', {
+    method: 'POST',
+    body: { username: regName, password: 'pass123' },
+  });
+  check('旧密码失效', oldLogin.status === 401);
+  const newLogin = await api('/api/v1/auth/login', {
+    method: 'POST',
+    body: { username: regName, password: 'pass456' },
+  });
+  check('新密码可登录', newLogin.status === 200 && Boolean(newLogin.payload.data?.token));
+
   // ---------- 基础数据 ----------
   const project = await api('/api/v1/projects', {
     method: 'POST',
@@ -163,24 +219,28 @@ async function main() {
   const code = published.payload.data?.code;
   check('发布生成单号', /^DC\d{8}-\d{4}$/.test(code || ''), code);
 
-  // ---------- 模拟数据 ----------
-  const profile = await api(`/api/v1/campaigns/${campaignId}/mock-profile`, {
+  // ----------  数据 ----------
+  const profile = await api(`/api/v1/campaigns/${campaignId}/data-profile`, {
     method: 'PUT',
     token: admin,
     body: { curveType: 'uniform', ctr: 0.01, cpm: 10, frequency: 65, totalImpressions: 500000, seed: 20261123 },
   });
-  check('保存模拟参数', profile.status === 200);
+  check('保存 参数', profile.status === 200);
 
-  const generated = await api(`/api/v1/campaigns/${campaignId}/mock/generate`, {
+  const generated = await api(`/api/v1/campaigns/${campaignId}/data/generate`, {
     method: 'POST',
     token: admin,
     body: {},
   });
-  check('生成模拟数据', generated.payload.data?.days === 5, JSON.stringify(generated.payload.data));
+  check('生成 数据', generated.payload.data?.days === 5, JSON.stringify(generated.payload.data));
   check('R9 同步返回新增天数', generated.payload.data?.added === 5, String(generated.payload.data?.added));
 
   const stats = await api(`/api/v1/campaigns/${campaignId}/stats`, { token: admin });
   check('分日数据写入', Number(stats.payload.data?.totals.impressions) === 500000);
+  check(
+    '分日数据不暴露来源字段',
+    (stats.payload.data?.rows || []).every((row) => !('source' in row))
+  );
 
   const detail = await api(`/api/v1/campaigns/${campaignId}`, { token: admin });
   check('计划详情含实际曝光', Number(detail.payload.data?.actualImpressions) === 500000);
@@ -264,12 +324,14 @@ async function main() {
 
   // ---------- R14 渠道名称 ----------
   const channels = await api('/api/v1/dashboard/channels', { token: admin });
-  check('R14 渠道中文名', channels.payload.data?.[0]?.channelName === `冒烟渠道-${stamp}`, JSON.stringify(channels.payload.data?.[0]));
+  const channelRow = (channels.payload.data || []).find((c) => c.channel === channelCode);
+  check('R14 渠道中文名', channelRow?.channelName === `冒烟渠道-${stamp}`, JSON.stringify(channelRow));
 
   // ---------- R9 同步记录 ----------
   const syncTasks = await api('/api/v1/sync-tasks', { token: admin });
   const task = syncTasks.payload.data?.items?.find((t) => t.campaignId === String(campaignId));
   check('R9 同步记录带计划名', Boolean(task?.campaignName), JSON.stringify(task));
+  check('R9 同步记录不暴露适配器', task && !('adapter' in task));
 
   // ---------- R15 空 body ----------
   const pauseRes = await fetch(`${BASE}/api/v1/campaigns/${campaignId}/pause`, {
@@ -381,6 +443,25 @@ async function main() {
 
   const ownList = await api('/api/v1/campaigns?pageSize=50', { token: normal });
   check('普通用户仅见本人计划', ownList.payload.data?.total === 0, String(ownList.payload.data?.total));
+
+  const resetPwd = await api(`/api/v1/users/${user.payload.data.id}/reset-password`, {
+    method: 'POST',
+    token: admin,
+    body: { password: 'reset123' },
+  });
+  check('管理员重置密码', resetPwd.status === 200);
+  const staleAfterReset = await api('/api/v1/auth/profile', { token: normal });
+  check('重置密码后旧令牌失效', staleAfterReset.status === 401);
+  const relogin = await login(`smoke${stamp}`, 'reset123');
+  check('重置后新密码登录', relogin.status === 200);
+  const resetToken = relogin.payload.data?.token;
+
+  const disabled = await api(`/api/v1/users/${user.payload.data.id}`, { method: 'DELETE', token: admin });
+  check('停用普通用户', disabled.status === 200);
+  const staleAfterDisable = await api('/api/v1/auth/profile', { token: resetToken });
+  check('停用后旧令牌失效', staleAfterDisable.status === 401);
+  const disabledLogin = await login(`smoke${stamp}`, 'reset123');
+  check('停用后不能登录', disabledLogin.status === 403);
 
   // ---------- 跨域 / 文档 ----------
   const preflight = await fetch(`${BASE}/api/v1/campaigns`, {

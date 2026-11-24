@@ -152,7 +152,7 @@ async function fetchRows(payload, user) {
   const { clause, params } = buildWhere(payload, user);
   const [rows] = await pool.query(
     `SELECT c.id, c.code, c.name, c.channel, ch.name AS channel_name, d.stat_date,
-            d.impressions, d.reach, d.clicks, d.cost, d.source
+            d.impressions, d.reach, d.clicks, d.cost
        FROM daily_stat d JOIN campaign c ON c.id = d.campaign_id
        LEFT JOIN channel ch ON ch.code = c.channel
       WHERE ${clause}
@@ -216,9 +216,9 @@ async function buildReport(payload, user) {
         overviewSection(campaign, totals),
         {
           name: '分日数据',
-          headers: ['日期', '曝光量', '曝光人数', '点击人数', '消耗', '来源'],
-          widths: [16, 16, 14, 12, 12, 9],
-          rows: daily.map((r) => [r.statDate, r.impressions, r.reach, r.clicks, r.cost, r.source]),
+          headers: ['日期', '曝光量', '曝光人数', '点击人数', '消耗'],
+          widths: [18, 18, 16, 14, 14],
+          rows: daily.map((r) => [r.statDate, r.impressions, r.reach, r.clicks, r.cost]),
         },
         {
           name: '人群分布',
@@ -318,8 +318,8 @@ async function buildReport(payload, user) {
       summarySection,
       {
         name: '明细',
-        headers: ['计划编号', '计划名称', '渠道', '日期', '曝光量', '曝光人数', '点击人数', '消耗', '来源'],
-        widths: [18, 26, 10, 13, 16, 13, 11, 9, 8],
+        headers: ['计划编号', '计划名称', '渠道', '日期', '曝光量', '曝光人数', '点击人数', '消耗'],
+        widths: [18, 26, 10, 13, 16, 13, 11, 9],
         rows: rows.map((r) => [
           r.code || '-',
           r.name,
@@ -329,7 +329,6 @@ async function buildReport(payload, user) {
           String(r.reach),
           String(r.clicks),
           r.cost,
-          r.source,
         ]),
       },
     ],

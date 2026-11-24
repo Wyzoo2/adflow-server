@@ -53,7 +53,7 @@ export const statsRepo = {
     const f = dateFilter('stat_date', { from, to });
     const where = ['campaign_id = ?', ...f.where];
     const rows = await query(
-      `SELECT stat_date, impressions, reach, clicks, cost, source, updated_at
+      `SELECT stat_date, impressions, reach, clicks, cost, updated_at
          FROM daily_stat WHERE ${where.join(' AND ')} ORDER BY stat_date ASC`,
       [campaignId, ...f.params]
     );
@@ -63,7 +63,6 @@ export const statsRepo = {
       reach: String(r.reach),
       clicks: String(r.clicks),
       cost: r.cost,
-      source: r.source,
       updatedAt: r.updated_at,
     }));
   },

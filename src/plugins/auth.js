@@ -5,7 +5,7 @@ import { userRepo } from '../repositories/user.repo.js';
 import { errors } from '../utils/errors.js';
 
 // 无需登录即可访问的路径（文档、登录、健康检查）
-const PUBLIC_PREFIXES = ['/api-docs', '/api/v1/auth/login', '/health', '/api/v1/health'];
+const PUBLIC_PREFIXES = ['/api-docs', '/api/v1/auth/login', '/api/v1/auth/register', '/health', '/api/v1/health'];
 
 function isPublic(request) {
   const url = request.url.split('?')[0];
@@ -25,12 +25,16 @@ export async function authHook(request) {
   const payload = authService.verify(header.slice(7).trim());
   const user = await userRepo.findById(payload.id);
   if (!user || user.status !== 1) throw errors.unauthorized('账号不存在或已停用');
+  if (Number(payload.tokenVersion) !== Number(user.tokenVersion)) {
+    throw errors.unauthorized('登录状态已失效，请重新登录');
+  }
 
   request.user = {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
     role: user.role,
+    tokenVersion: user.tokenVersion,
   };
 }
 

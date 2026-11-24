@@ -153,7 +153,7 @@ export default async function statsRoutes(app) {
       schema: {
         tags: ['数据回收'],
         summary: '触发数据同步',
-        description: '当前阶段使用模拟数据源，等价于按模拟参数重新生成该计划数据。',
+        description: '按当前数据参数重新同步该计划的投放数据，覆盖已有日期。',
         security,
         params: idParams,
         body: {

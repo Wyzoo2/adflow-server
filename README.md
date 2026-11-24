@@ -1,6 +1,6 @@
 # 投流统计平台 · 后端服务
 
-Node.js + MySQL 实现的投流统计后端，面向前端联调与验收演示。覆盖投放计划全流程、厂商多选管理、模拟投放数据生成与调节、看板聚合、报表导出、审计日志与权限隔离。
+Node.js + MySQL 实现的投流统计后端，面向前端联调与验收演示。覆盖投放计划全流程、厂商多选管理、投放数据生成与调节、看板聚合、报表导出、审计日志与权限隔离。
 
 - 分层结构：`routes → services → repositories → db`，领域规则单独放在 `domain/`
 - 跨域：默认允许全部来源，可用 `CORS_ORIGIN` 配置白名单
@@ -39,7 +39,7 @@ adflow-server/
 │   ├── services/            # 业务层：事务、规则编排
 │   ├── repositories/        # 数据层：SQL 与字段映射
 │   ├── domain/              # 状态机、单号、指标口径
-│   ├── adapters/media/      # 模拟数据生成器（预留真实媒体适配）
+│   ├── adapters/media/      # 数据生成器（预留真实媒体适配）
 │   └── utils/               # 响应体、错误、分页、日期
 └── storage/reports/         # 导出的 Excel
 ```
@@ -88,7 +88,9 @@ npm start
 | --- | --- | --- | --- |
 | 管理员 | root | root | 全部数据与配置 |
 
-系统初始只创建这一个管理员账号；普通用户由管理员在「用户管理」中新增，登录后只能看到本人创建的计划与数据。
+系统初始只创建这一个管理员账号；普通用户由管理员在「用户管理」中新增，或通过 `POST /api/v1/auth/register` 自行注册，登录后只能看到本人创建的计划与数据。注册入口只创建普通用户，不能注册管理员。
+
+修改密码、管理员重置密码、停用账号都会递增该用户的 `token_version`，之前签发的令牌立即失效，接口返回 401，需要重新登录。修改密码接口的返回中带 `relogin: true`，前端应清理本地令牌并跳转登录页。
 
 投放渠道完全由管理员在「渠道管理」中创建；`npm run setup` 只建表并创建 `root` 管理员，不写入任何渠道、项目、计划等业务数据。
 
@@ -136,7 +138,7 @@ npm run migrate
 
 文档已按 13 个业务分类分组，包含请求参数与在线调试：
 
-认证、用户管理、厂商管理、渠道管理、项目管理、投放计划、数据回收、模拟投放、数据看板、报表中心、字典、系统日志、健康检查。
+认证、用户管理、厂商管理、渠道管理、项目管理、投放计划、数据回收、数据生成、数据看板、报表中心、字典、系统日志、健康检查。
 
 建议使用顺序：先调 `POST /api/v1/auth/login` 登录，复制返回的 token，点击文档右上角 **Authorize** 填入后即可调试需要登录的接口。
 
@@ -160,8 +162,11 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 
 | 分类 | 方法与路径 | 说明 |
 | --- | --- | --- |
+| 认证 | POST `/api/v1/auth/register` | 注册普通用户，返回令牌 |
 | 认证 | POST `/api/v1/auth/login` | 登录获取 JWT |
 | 认证 | GET `/api/v1/auth/profile` | 当前用户 |
+| 认证 | PATCH `/api/v1/auth/profile` | 修改昵称 |
+| 认证 | PUT `/api/v1/auth/password` | 修改密码，旧令牌全部失效 |
 | 认证 | POST `/api/v1/auth/refresh` | 续期令牌 |
 | 用户 | GET/POST `/api/v1/users` | 用户列表、新增（管理员） |
 | 厂商 | GET `/api/v1/vendors` | 厂商分页列表 |
@@ -182,8 +187,8 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 | 数据 | DELETE `/api/v1/campaigns/{id}/stats` | 清空计划数据（管理员） |
 | 数据 | POST `/api/v1/stats/import` | Excel 导入 |
 | 数据 | GET `/api/v1/stats/import/template` | 下载导入模板 |
-| 模拟 | GET/PUT `/api/v1/campaigns/{id}/mock-profile` | 模拟参数 |
-| 模拟 | POST `/api/v1/campaigns/{id}/mock/generate` | 生成模拟数据（管理员） |
+| 数据生成 | GET/PUT `/api/v1/campaigns/{id}/data-profile` | 数据参数 |
+| 数据生成 | POST `/api/v1/campaigns/{id}/data/generate` | 生成投放数据（管理员） |
 | 看板 | GET `/api/v1/dashboard/summary` | 汇总指标 |
 | 看板 | GET `/api/v1/dashboard/trend` | 按日趋势 |
 | 看板 | GET `/api/v1/dashboard/dimensions` | 地域/性别/年龄分布 |
@@ -199,7 +204,7 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 - **状态机**：`draft → pending → scheduled → running → paused → finished → closed`，未定义迁移直接返回 409。
 - **投放单号**：发布时生成 `DCYYYYMMDD-XXXX`，唯一索引兜底，前端可直接用于对账。
 - **幂等入库**：分日数据以 `(campaign_id, stat_date)` 为主键，`INSERT ... AS new ON DUPLICATE KEY UPDATE` 覆盖写入，重复导入不累加。
-- **模拟数据**：按目标曝光、曲线、点击率、千人成本、频次、人群比例与随机种子生成；固定种子结果可复现，人群维度用最大余数法保证合计精确。
+- **投放数据**：按目标曝光、曲线、点击率、千人成本、频次、人群比例与随机种子生成；固定种子结果可复现，人群维度用最大余数法保证合计精确。
 - **数据权限**：管理员全量；普通用户按 `created_by` 过滤，读写他人计划返回 404。
 - **审计**：登录、状态迁移、数据调节、厂商变更等写入 `audit_log`，记录前后值与操作人。
 
@@ -212,7 +217,7 @@ netsh advfirewall firewall add rule name="adflow-3000" dir=in action=allow proto
 1. 在「项目管理」创建项目；
 2. 在「厂商管理」新增投流厂商；
 3. 在「投放计划」创建计划并选择厂商；
-4. 管理员审核、发布后，用「模拟参数」生成投放数据，或手工录入 / Excel 导入。
+4. 管理员审核、发布后，用「数据参数」生成投放数据，或手工录入 / Excel 导入。
 
 重置数据（清空业务数据、删除普通用户并恢复默认管理员密码）：
 
@@ -223,7 +228,7 @@ npm run seed:force
 ## 验证
 
 ```bash
-# 服务启动后执行，覆盖 R1-R15 补充需求、渠道/厂商管理、计划全流程、模拟生成、Excel 导入、四类报表、权限与跨域（75 项）
+# 服务启动后执行，覆盖 R1-R15 补充需求、渠道/厂商管理、注册与账号资料、计划全流程、数据生成、Excel 导入、四类报表、权限与跨域（91 项）
 npm run smoke
 ```
 

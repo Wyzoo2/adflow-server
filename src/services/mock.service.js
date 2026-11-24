@@ -1,4 +1,4 @@
-// 模拟投放：参数保存、数据生成与覆盖写入。
+// 投放数据：参数保存、数据生成与覆盖写入。
 
 import { withTransaction, queryOne, pool } from '../db/pool.js';
 import { campaignRepo } from '../repositories/campaign.repo.js';
@@ -47,7 +47,7 @@ export const mockService = {
   },
 
   async saveProfile(id, payload, user, ip) {
-    if (user.role !== 'admin') throw errors.forbidden('模拟参数仅管理员可配置');
+    if (user.role !== 'admin') throw errors.forbidden(' 参数仅管理员可配置');
     const campaign = await accessCampaign(id, user);
 
     const curveType = payload.curveType || 'uniform';
@@ -85,7 +85,7 @@ export const mockService = {
     await auditRepo.insert({
       objectType: 'campaign',
       objectId: id,
-      action: 'save_mock_profile',
+      action: 'save_data_profile',
       after: { curveType, ctr, cpm, frequency, totalImpressions },
       operatorId: user.id,
       ip,
@@ -94,11 +94,11 @@ export const mockService = {
   },
 
   /**
-   * 生成模拟数据：按 mock_profile 生成逐日指标与人群维度，
+   * 生成投放数据：按数据参数生成逐日指标与人群维度，
    * 以覆盖方式写入（重复生成不会累加），并记录同步任务与审计。
    */
   async generate(id, options, user, ip) {
-    if (user.role !== 'admin') throw errors.forbidden('生成模拟数据仅管理员可执行');
+    if (user.role !== 'admin') throw errors.forbidden('生成数据仅管理员可执行');
     const campaign = await accessCampaign(id, user);
     const profile = await readProfile(id);
     const from = options.from || campaign.startDate;
@@ -122,7 +122,7 @@ export const mockService = {
           d.reach,
           d.clicks,
           d.cost,
-          'mock',
+          'api',
           user.id,
         ]),
         conn
@@ -141,14 +141,14 @@ export const mockService = {
       );
       await conn.query(
         `INSERT INTO sync_task (campaign_id, trigger_type, adapter, status, rows_affected, message, finished_at)
-         VALUES (?, 'manual', 'mock', 'success', ?, ?, NOW())`,
-        [id, series.daily.length, `生成 ${from} 至 ${to} 的模拟数据`]
+         VALUES (?, 'manual', 'api', 'success', ?, ?, NOW())`,
+        [id, series.daily.length, `同步 ${from} 至 ${to} 的投放数据`]
       );
       await auditRepo.insert(
         {
           objectType: 'campaign',
           objectId: id,
-          action: 'mock_generate',
+          action: 'data_generate',
           after: { from, to, days: series.daily.length, totals: series.totals },
           operatorId: user.id,
           ip,

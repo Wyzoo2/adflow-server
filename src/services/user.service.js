@@ -54,10 +54,27 @@ export const userService = {
     if (payload.role && !ROLES.includes(payload.role)) {
       throw errors.badRequest('role 只能是 admin 或 user');
     }
-    if (String(id) === String(operator.id) && payload.status !== undefined && Number(payload.status) === 0) {
-      throw errors.badRequest('不能停用当前登录账号');
+    if (String(id) === String(operator.id)) {
+      if (payload.status !== undefined && Number(payload.status) === 0) {
+        throw errors.badRequest('不能停用当前登录账号');
+      }
+      if (payload.role && payload.role !== target.role) {
+        throw errors.badRequest('不能修改当前登录账号的身份');
+      }
+    }
+    // 防止把最后一个启用的管理员降级或停用，导致系统无人可管理
+    const losingAdmin =
+      target.role === 'admin' &&
+      ((payload.role && payload.role !== 'admin') ||
+        (payload.status !== undefined && Number(payload.status) === 0));
+    if (losingAdmin && (await userRepo.countActiveAdmins()) <= 1) {
+      throw errors.badRequest('至少需要保留一个启用的管理员');
     }
     await userRepo.update(id, payload);
+    // 停用账号时让已签发令牌立即失效
+    if (payload.status !== undefined && Number(payload.status) === 0) {
+      await userRepo.bumpTokenVersion(id);
+    }
     await auditRepo.insert({
       objectType: 'user',
       objectId: id,
@@ -75,6 +92,7 @@ export const userService = {
     if (!target) throw errors.notFound('用户不存在');
     if (!password || password.length < 6) throw errors.badRequest('密码至少 6 位');
     await userRepo.updatePassword(id, bcrypt.hashSync(password, 10));
+    await userRepo.bumpTokenVersion(id);
     await auditRepo.insert({
       objectType: 'user',
       objectId: id,
@@ -89,7 +107,11 @@ export const userService = {
     const target = await userRepo.findById(id);
     if (!target) throw errors.notFound('用户不存在');
     if (String(id) === String(operator.id)) throw errors.badRequest('不能停用当前登录账号');
+    if (target.role === 'admin' && (await userRepo.countActiveAdmins()) <= 1) {
+      throw errors.badRequest('至少需要保留一个启用的管理员');
+    }
     await userRepo.update(id, { status: 0 });
+    await userRepo.bumpTokenVersion(id);
     await auditRepo.insert({
       objectType: 'user',
       objectId: id,

@@ -14,6 +14,19 @@ import { errors } from '../utils/errors.js';
 
 const ADMIN_ONLY_EVENTS = new Set(['approve', 'reject', 'publish', 'close']);
 
+/** 校验厂商存在且启用，避免计划已写入后才发现厂商无效 */
+async function assertVendors(vendorIds) {
+  const ids = [...new Set((vendorIds || []).map(String))];
+  if (!ids.length) throw errors.badRequest('至少选择一个投放厂商');
+  if (ids.length > 5) throw errors.badRequest('厂商数量不能超过五个');
+  const rows = await query(
+    'SELECT id FROM vendor WHERE id IN (?) AND status = 1 AND deleted_at IS NULL',
+    [ids]
+  );
+  if (rows.length !== ids.length) throw errors.vendorDisabled();
+  return ids;
+}
+
 /** 校验渠道存在且启用；修改计划时允许沿用原来的渠道编码 */
 async function assertChannel(code, currentCode = null) {
   if (!code) throw errors.badRequest('投放渠道不能为空');
@@ -125,10 +138,12 @@ export const campaignService = {
       throw errors.nameExists('该项目下已存在同名计划');
     }
 
+    const vendorIds =
+      Array.isArray(payload.vendorIds) && payload.vendorIds.length
+        ? await assertVendors(payload.vendorIds)
+        : null;
     const id = await campaignRepo.create({ ...payload, createdBy: user.id });
-    if (Array.isArray(payload.vendorIds) && payload.vendorIds.length) {
-      await this.setVendors(id, payload.vendorIds, user, ip);
-    }
+    if (vendorIds) await this.setVendors(id, vendorIds, user, ip);
     await auditRepo.insert({
       objectType: 'campaign',
       objectId: id,
@@ -153,10 +168,9 @@ export const campaignService = {
     if (payload.name && (await campaignRepo.existsName(campaign.projectId, payload.name, id))) {
       throw errors.nameExists('该项目下已存在同名计划');
     }
+    const vendorIds = Array.isArray(payload.vendorIds) ? await assertVendors(payload.vendorIds) : null;
     await campaignRepo.update(id, payload);
-    if (Array.isArray(payload.vendorIds)) {
-      await this.setVendors(id, payload.vendorIds, user, ip);
-    }
+    if (vendorIds) await this.setVendors(id, vendorIds, user, ip);
     await auditRepo.insert({
       objectType: 'campaign',
       objectId: id,

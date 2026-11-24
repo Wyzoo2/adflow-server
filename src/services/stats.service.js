@@ -279,7 +279,7 @@ export const statsService = {
     return { rows: rows.length, campaigns: [...campaigns.keys()] };
   },
 
-  /** 清空单个计划的模拟/投放数据，便于演示前重置 */
+  /** 清空单个计划的投放数据，便于演示前重置 */
   async clear(id, user, ip) {
     if (user.role !== 'admin') throw errors.forbidden('清空数据仅管理员可执行');
     await accessCampaign(id, user);

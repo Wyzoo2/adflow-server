@@ -24,7 +24,7 @@ export default async function systemRoutes(app) {
             action: {
               type: 'string',
               description:
-                '动作：login/create/update/delete/submit/approve/reject/publish/pause/resume/finish/close/stats_upsert/stats_adjust/stats_clear/mock_generate/import 等',
+                '动作：login/create/update/delete/submit/approve/reject/publish/pause/resume/finish/close/stats_upsert/stats_adjust/stats_clear/data_generate/import 等',
             },
             from: { type: 'string', description: '开始日期 YYYY-MM-DD' },
             to: { type: 'string', description: '结束日期 YYYY-MM-DD' },
@@ -88,7 +88,6 @@ export default async function systemRoutes(app) {
           campaignId: r.campaign_id ? String(r.campaign_id) : null,
           campaignName: r.campaign_name || null,
           triggerType: r.trigger_type,
-          adapter: r.adapter,
           status: r.status,
           rowsAffected: r.rows_affected,
           durationMs:
