@@ -166,7 +166,7 @@ CREATE TABLE `daily_stat` (
   `reach` bigint unsigned NOT NULL DEFAULT '0',
   `clicks` bigint unsigned NOT NULL DEFAULT '0',
   `cost` decimal(12,2) NOT NULL DEFAULT '0.00',
-  `source` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual/excel/api',
+  `source` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual/excel/api/auto',
   `updated_by` bigint unsigned DEFAULT NULL,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`campaign_id`,`stat_date`),
@@ -195,7 +195,7 @@ CREATE TABLE `dim_stat` (
 CREATE TABLE `mock_profile` (
   `campaign_id` bigint unsigned NOT NULL,
   `total_impressions` bigint unsigned NOT NULL DEFAULT '0',
-  `curve_type` varchar(16) NOT NULL DEFAULT 'uniform',
+  `curve_type` varchar(16) NOT NULL DEFAULT 'front_load',
   `ctr` decimal(6,4) NOT NULL DEFAULT '0.0100',
   `cpm` decimal(8,2) NOT NULL DEFAULT '12.00',
   `frequency` decimal(6,2) NOT NULL DEFAULT '65.00',

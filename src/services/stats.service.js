@@ -7,7 +7,7 @@ import { statsRepo } from '../repositories/stats.repo.js';
 import { auditRepo } from '../repositories/audit.repo.js';
 import { canAcceptStats } from '../domain/campaign-status.js';
 import { clickRate, completionRate } from '../domain/metrics.js';
-import { mockService } from './mock.service.js';
+import { autoDataService } from './auto-data.service.js';
 import { errors } from '../utils/errors.js';
 import { formatDate } from '../utils/date.js';
 
@@ -295,8 +295,8 @@ export const statsService = {
     return { campaignId: id, cleared: true, deletedDays };
   },
 
-  async sync(id, user, ip, options = {}) {
-    return mockService.generate(id, options, user, ip);
+  async sync(id, user) {
+    return autoDataService.sync(id, user);
   },
 
   async template() {

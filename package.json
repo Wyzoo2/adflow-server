@@ -16,6 +16,7 @@
     "migrate:new": "node scripts/new-migration.js",
     "seed": "node scripts/seed.js",
     "seed:force": "node scripts/seed.js --force",
+    "auto:tick": "node scripts/auto-tick.js",
     "smoke": "node scripts/smoke.js"
   },
   "dependencies": {

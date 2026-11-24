@@ -39,7 +39,7 @@ export function buildWeights(days, curve) {
     const ratio = days.length > 1 ? index / (days.length - 1) : 0.5;
     switch (curve) {
       case 'front_load':
-        return 1.3 - 0.6 * ratio;
+        return 1.6 - 0.8 * ratio;
       case 'back_load':
         return 0.7 + 0.6 * ratio;
       case 'weekend': {
@@ -65,7 +65,7 @@ export function generateSeries({ campaign, profile, from, to }) {
 
   const seed = Number(profile?.seed || 20261101) >>> 0;
   const rand = mulberry32(seed);
-  const baseWeights = buildWeights(days, profile?.curveType || 'uniform');
+  const baseWeights = buildWeights(days, profile?.curveType || 'front_load');
   const jittered = baseWeights.map((w) => w * (0.85 + 0.3 * rand()));
   const total = Number(profile?.totalImpressions || campaign.targetImpressions || 0);
   const impressions = splitExact(total, jittered);

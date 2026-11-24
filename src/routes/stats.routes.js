@@ -150,21 +150,16 @@ export default async function statsRoutes(app) {
   app.post(
     '/:id/sync',
     {
+      preHandler: requireAdmin,
       schema: {
         tags: ['数据回收'],
-        summary: '触发数据同步',
-        description: '按当前数据参数重新同步该计划的投放数据，覆盖已有日期。',
+        summary: '触发数据同步（管理员）',
+        description:
+          '按当前时间补齐应产生的投放数据，不做额外增量；重复调用不会加速增长，数据仍按排期自然推进。',
         security,
         params: idParams,
-        body: {
-          type: 'object',
-          properties: {
-            from: { type: 'string', description: '同步开始日期，默认计划开始日期' },
-            to: { type: 'string', description: '同步结束日期，默认计划结束日期' },
-          },
-        },
       },
     },
-    async (request) => ok(await statsService.sync(request.params.id, request.user, request.ip, request.body || {}))
+    async (request) => ok(await statsService.sync(request.params.id, request.user))
   );
 }

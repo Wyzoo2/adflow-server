@@ -11,7 +11,7 @@ const profileBody = {
     curveType: {
       type: 'string',
       enum: ['uniform', 'front_load', 'back_load', 'weekend'],
-      description: '投放曲线：均匀、前低后高、前高后低、周末加权',
+      description: '投放曲线，默认 front_load（前重后轻，前几天份额更大）',
     },
     ctr: { type: 'number', minimum: 0, maximum: 0.2, description: '点击率，0-0.2，默认 0.01' },
     cpm: { type: 'number', minimum: 0.01, description: '千人曝光成本，默认 12' },

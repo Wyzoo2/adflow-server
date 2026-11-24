@@ -36,7 +36,7 @@ export const mockService = {
     return {
       campaignId: campaign.id,
       totalImpressions: profile ? String(profile.totalImpressions) : campaign.targetImpressions,
-      curveType: profile?.curveType || 'uniform',
+      curveType: profile?.curveType || 'front_load',
       ctr: profile?.ctr ?? 0.01,
       cpm: profile?.cpm ?? 12,
       frequency: profile?.frequency ?? 65,
@@ -50,7 +50,7 @@ export const mockService = {
     if (user.role !== 'admin') throw errors.forbidden(' 参数仅管理员可配置');
     const campaign = await accessCampaign(id, user);
 
-    const curveType = payload.curveType || 'uniform';
+    const curveType = payload.curveType || 'front_load';
     if (!CURVES.includes(curveType)) throw errors.mockParam('投放曲线取值不合法');
     const ctr = Number(payload.ctr ?? 0.01);
     if (ctr < 0 || ctr > 0.2) throw errors.mockParam('点击率需在 0 到 20% 之间');
