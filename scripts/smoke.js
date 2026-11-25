@@ -229,6 +229,47 @@ async function main() {
     republished.payload.data?.status === 'running' && republished.payload.data?.code === code
   );
 
+  // 项目预算超出时不允许发布
+  const budgetProject = await api('/api/v1/projects', {
+    method: 'POST',
+    token: admin,
+    body: { name: `预算测试项目-${stamp}`, budget: 1000 },
+  });
+  const budgetProjectId = budgetProject.payload.data?.id;
+  const overBudget = await api('/api/v1/campaigns', {
+    method: 'POST',
+    token: admin,
+    body: {
+      projectId: budgetProjectId,
+      name: `预算超限计划-${stamp}`,
+      channel: channelCode,
+      budget: 1200,
+      targetImpressions: 10000,
+      startDate: '2026-11-01',
+      endDate: '2026-12-05',
+    },
+  });
+  const overId = overBudget.payload.data?.id;
+  await api(`/api/v1/campaigns/${overId}/submit`, { method: 'POST', token: admin });
+  await api(`/api/v1/campaigns/${overId}/approve`, { method: 'POST', token: admin });
+  const blockedPublish = await api(`/api/v1/campaigns/${overId}/publish`, {
+    method: 'POST',
+    token: admin,
+    body: {},
+  });
+  check('项目预算超出禁止发布', blockedPublish.status === 409 && blockedPublish.payload.code === 2003);
+  await api(`/api/v1/projects/${budgetProjectId}`, {
+    method: 'PUT',
+    token: admin,
+    body: { budget: 5000 },
+  });
+  const allowedPublish = await api(`/api/v1/campaigns/${overId}/publish`, {
+    method: 'POST',
+    token: admin,
+    body: {},
+  });
+  check('调整项目预算后允许发布', allowedPublish.payload.data?.status === 'running');
+
   // 未来排期：只排期，不生成单号
   const futureCampaign = await api('/api/v1/campaigns', {
     method: 'POST',

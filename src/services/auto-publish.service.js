@@ -2,9 +2,11 @@
 // 每轮加数据库锁，单计划用行锁，避免重复生成单号。
 import { pool, query, withTransaction } from '../db/pool.js';
 import { campaignRepo } from '../repositories/campaign.repo.js';
+import { projectRepo } from '../repositories/project.repo.js';
 import { auditRepo } from '../repositories/audit.repo.js';
 import { buildCampaignCode } from '../domain/code.js';
 import { formatDate, todayShanghai } from '../utils/date.js';
+import { errors } from '../utils/errors.js';
 
 const LOCK_NAME = 'adflow_auto_publish_tick';
 let failureStreak = 0;
@@ -44,6 +46,14 @@ async function processOne(id, today, operatorId) {
       return 'expired';
     }
 
+    // 项目预算超出时不允许发布，计划继续停在 scheduled
+    const project = await projectRepo.lockBudget(conn, campaign.projectId);
+    if (!project) throw errors.notFound('项目不存在');
+    const totalBudget = await projectRepo.sumCampaignBudget(conn, campaign.projectId);
+    if (totalBudget > project.budget) {
+      throw errors.budgetExceeded('项目预算已超出，无法自动发布');
+    }
+
     const code = campaign.code || buildCampaignCode(campaign.id, new Date());
     await conn.query(
       "UPDATE campaign SET code = ?, status = 'running', published_at = NOW() WHERE id = ?",
@@ -75,7 +85,7 @@ export const autoPublishService = {
     try {
       const [locks] = await conn.query('SELECT GET_LOCK(?, 0) AS ok', [LOCK_NAME]);
       if (Number(locks[0].ok) !== 1) {
-        return { skipped: true, campaigns: 0, published: 0, expired: 0, failed: 0 };
+        return { skipped: true, campaigns: 0, published: 0, expired: 0, blocked: 0, failed: 0 };
       }
 
       const today = todayShanghai();
@@ -88,6 +98,7 @@ export const autoPublishService = {
       const operatorId = await systemOperatorId();
       let published = 0;
       let expired = 0;
+      let blocked = 0;
       let failed = 0;
 
       for (const row of rows) {
@@ -97,6 +108,11 @@ export const autoPublishService = {
           if (result === 'expired') expired += 1;
           failureStreak = 0;
         } catch (err) {
+          if (err.code === 2003) {
+            blocked += 1;
+            console.warn(`[auto-publish] 计划 ${row.id} 因项目预算超出暂停发布`);
+            continue;
+          }
           failed += 1;
           failureStreak += 1;
           console.error(`[auto-publish] 计划 ${row.id} 自动发布失败：${err.message}`);
@@ -106,7 +122,7 @@ export const autoPublishService = {
         }
       }
 
-      return { skipped: false, campaigns: rows.length, published, expired, failed };
+      return { skipped: false, campaigns: rows.length, published, expired, blocked, failed };
     } finally {
       try {
         await conn.query('SELECT RELEASE_LOCK(?)', [LOCK_NAME]);

@@ -12,9 +12,9 @@ export function startAutoPublish(app) {
     autoPublishService
       .tick()
       .then((result) => {
-        if (result.published || result.expired || result.failed) {
+        if (result.published || result.expired || result.blocked || result.failed) {
           app.log.info(
-            `排期自动发布：发布 ${result.published}，过期结束 ${result.expired}，失败 ${result.failed}`
+            `排期自动发布：发布 ${result.published}，过期结束 ${result.expired}，预算拦截 ${result.blocked}，失败 ${result.failed}`
           );
         }
       })

@@ -158,7 +158,7 @@ export default async function campaignRoutes(app) {
         tags: ['投放计划'],
         summary: '发布计划（按排期）',
         description:
-          '仅管理员。开始日期未到时保持已排期且不生成单号；开始日期已到或为今天时生成单号并转为投放中；已投放中重复发布幂等返回原单号。',
+          '仅管理员。开始日期未到时保持已排期且不生成单号；开始日期已到或为今天时生成单号并转为投放中；项目下所有计划预算合计超过项目总预算时返回 2003，禁止发布；已投放中重复发布幂等返回原单号。',
         security,
         params: idParams,
         body: {

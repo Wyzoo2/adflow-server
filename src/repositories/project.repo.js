@@ -33,6 +33,21 @@ export const projectRepo = {
     return row ? mapProject(row) : null;
   },
 
+  /** 发布时锁定项目预算行，避免并发发布同时通过校验 */
+  async lockBudget(conn, id) {
+    const [rows] = await conn.query('SELECT id, budget FROM project WHERE id = ? FOR UPDATE', [id]);
+    return rows.length ? { id: String(rows[0].id), budget: Number(rows[0].budget) } : null;
+  },
+
+  /** 项目下所有未删除计划的预算合计（含当前计划） */
+  async sumCampaignBudget(conn, projectId) {
+    const [rows] = await conn.query(
+      'SELECT COALESCE(SUM(budget), 0) AS total FROM campaign WHERE project_id = ? AND deleted_at IS NULL',
+      [projectId]
+    );
+    return Number(rows[0].total);
+  },
+
   async create({ name, client, startDate, endDate, budget }) {
     const result = await execute(
       `INSERT INTO project (name, client, start_date, end_date, budget) VALUES (?, ?, ?, ?, ?)`,

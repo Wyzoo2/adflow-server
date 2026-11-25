@@ -28,6 +28,16 @@ async function assertVendors(vendorIds) {
   return ids;
 }
 
+/** 校验项目预算：项目下所有计划预算合计不能超过项目总预算 */
+async function assertProjectBudget(conn, campaign) {
+  const project = await projectRepo.lockBudget(conn, campaign.projectId);
+  if (!project) throw errors.notFound('项目不存在');
+  const total = await projectRepo.sumCampaignBudget(conn, campaign.projectId);
+  if (total > project.budget) {
+    throw errors.budgetExceeded('项目预算已超出，无法发布，请先调整计划或项目预算');
+  }
+}
+
 /** 校验渠道存在且启用；修改计划时允许沿用原来的渠道编码 */
 async function assertChannel(code, currentCode = null) {
   if (!code) throw errors.badRequest('投放渠道不能为空');
@@ -261,6 +271,7 @@ export const campaignService = {
       if (startDate > today) {
         return { code: null, status: 'scheduled', deferred: true };
       }
+      await assertProjectBudget(conn, campaign);
 
       const code = campaign.code || buildCampaignCode(campaign.id, new Date());
       await conn.query(
